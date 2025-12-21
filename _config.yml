@@ -1,0 +1,53 @@
+title: Develop Your Senses As a Developer
+description: "Satellite - jekyll blog theme"
+logo_img: "/assets/img/favicon.webp"
+profile_img: "/assets/img/profile.webp"
+
+# Social Links
+email: yyt1186@gmail.com
+github_username: jjunier
+twitter_username: twitter
+instagram_username: instagram
+linkedin_username: jeong-jun
+facebook_username: facebook
+
+# External API
+giscus_repo: "jjunier/jjunier.github.io"
+giscus_repoId: "R_kgDOOucnQA"
+giscus_category: "Q&A"
+giscus_categoryId: "DIC_kwDOOucnQM4C0EwU"
+goatcounter_code: jjunier
+google_analytics:
+
+# If your repo name follows the format "<user-name>.github.io", then leave the below blank.
+# Otherwise, set its value as "/<repo-name>". ex) baseurl: /myblog
+baseurl: ""
+
+# Build settings
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+  - jekyll-loading-lazy
+
+exclude:
+  - docs/
+
+collections:
+  pages:
+    output: true
+    permalink: /:path.html
+
+defaults:
+  -
+    scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: "page"
+      date: "1900-01-01 00:00:00 +0000"
+
+# Markdown newline activator 
+kramdown:
+  input: GFM
+  hard_wrap: true
