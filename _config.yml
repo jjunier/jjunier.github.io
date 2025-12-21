@@ -1,4 +1,4 @@
-title: Develop Your Senses As a Developer
+title: Sense of Engineering
 description: "Satellite - jekyll blog theme"
 logo_img: "/assets/img/favicon.webp"
 profile_img: "/assets/img/profile.webp"
@@ -13,9 +13,9 @@ facebook_username: facebook
 
 # External API
 giscus_repo: "jjunier/jjunier.github.io"
-giscus_repoId: "R_kgDOOucnQA"
+giscus_repoId: "R_kgDOQssM1A"
 giscus_category: "Q&A"
-giscus_categoryId: "DIC_kwDOOucnQM4C0EwU"
+giscus_categoryId: "DIC_kwDOQssM1M4C0E5A"
 goatcounter_code: jjunier
 google_analytics:
 
