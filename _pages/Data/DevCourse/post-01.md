@@ -91,3 +91,46 @@ def linear_search(L, x):
         return -1
 ```
 
+**이진 탐색(Binary Search)**
+탐색하려는 리스트가 이미 크기 순으로 정렬된 경우에만 사용 가능한 탐색 방법을 말한다.
+-> O(log n) 시간이 소요된다.
+
+```python
+def binary_search(L, x):
+    lower = 0
+    upper = len(L) - 1
+    idx = -1
+
+    while lower <= upper:
+        middle = (lower + upper) // 2
+        if L[middle] == target:
+            ...
+        elif L[middle] < target:
+            lower = ...
+        else:
+            upper = ...
+```
+
+## 재귀 함수(Recursive Function)
+---
+하나의 함수에서 자신을 다시 호출하는 작업을 수행하는 함수로, 많은 종류의 문제가 **재귀적(Recursively)**으로 해결이 가능하다.
+
+![재귀 함수](/assets/img/contents/recursive_func.png "Recursive Function Example")
+
+```python
+# 재귀적(Recursive) 구조의 자연수 합 구하기
+def recursively_sum(n):
+    if n <= 1:
+        return n
+    else:
+        return n + recursively_sum(n - 1)
+
+# 반복적(iterative) 구조의 자연수 합 구하기
+def iterative_sum(n):
+    s = 0
+    while n >= 0:
+        s += n
+        n -= 1
+    
+    return s
+```
