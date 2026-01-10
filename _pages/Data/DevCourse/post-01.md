@@ -160,6 +160,50 @@ def iterative_sum(n):
 
 ## 자료구조 2 | 연결 리스트(Linked List)
 ---
-연결 리스트는 추상적 자료구조(Abstract Data Structures) 중 하나로, 자료 구조의 내부 구현은 숨겨두고 밖에서 보이는 것들인 데이터와 연산을 제공하는 구조이다.
+연결 리스트는 **추상적 자료구조(Abstract Data Structures)** 중 하나로, 자료 구조의 내부 구현은 숨겨두고 밖에서 보이는 것들인 **데이터와 연산을 제공하는 구조**이다.
 
-여기서 말하는 데이터는 정수, 문자열, 레코드 등의 타입을 의미하며, 연산은 삽입, 삭제, 순회, 정렬, 탐색 등이 있다
+여기서 말하는 데이터는 **정수, 문자열, 레코드 등의 타입**을 의미하며, 연산은 삽입, 삭제, 순회, 정렬, 탐색 등이 있다.
+
+기본적인 연결 리스트의 구성은 **노드(Node)**라고 칭하며, **Data와 Link(Next)**로 이루어져 있다. Node 내의 데이터는 정수형뿐만 아니라 다른 구조로 이루어질 수 있는데 문자열, 레코드, 또 다른 연결 리스트 등이 담길 수 있다.
+
+```python
+# 첫 번째 노드 정의
+class Node:
+    def __init__(self, item):
+        self.data = item
+        self.next = None
+
+# 연결 리스트 정의: 노드 내 시작 부분(Head)과 끝 부분(Tail)
+class LinkedList:
+    def __init__(self):
+        self.nodeCount = 0
+        self.head = None
+        self.tail = None
+```
+
+## 연결 리스트 연산
+---
+**k번째 특정 원소 참조**
+---
+k(pos)번째에 위치한 Node 내 Data 자체를 리턴하는 연산이다.
+```python
+def getAt(self, pos):
+    if pos <= 0 and pos > self.nodeCount:
+        return None
+    i = 1
+    curr = self.head
+    
+    while i < pos:
+        curr = curr.next
+        i += 1
+    
+    return curr
+```
+
+배열 vs 연결 리스트
+
+||배열|연결 리스트|
+|---|---|---|
+|저장 공간|연속한 위치|임의의 위치|
+|특정 원소 지칭|매우 간편함|선형 탐색과 유사함|
+
