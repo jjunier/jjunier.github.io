@@ -191,6 +191,7 @@ class LinkedList:
 ---
 **연산 1. k번째 특정 원소 참조**
 첫 번째 연결 리스트를 이용한 연산으로는 **k(pos)번째에 위치한 Node 내 Data 자체를 리턴하는 연산**이다.
+
 ```python
 def getAt(self, pos):
     if pos <= 0 and pos > self.nodeCount:
@@ -205,5 +206,78 @@ def getAt(self, pos):
     return curr
 ```
 
+**연산 2. 원소 삽입**
+pos가 가리키는 위치(1 <= pos <= nodeCount+1)에 **newNode를 삽입하는 연산**으로, 성공/실패 여부에 따라 True/False를 반환한다.
 
+```python
+def insertAt(self, pos, newNode):
+    if pos < 1 or self.nodeCount + 1:
+        return False
+    
+    if pos == 1:
+        newNode.next = self.head
+        self.head = newNode
+    
+    else:
+        prev = self.getAt(pos-1)
+        newNode.next = prev.next
+        prev.next = newNode
+
+    if pos == self.nodeCount + 1:
+        self.tail = newNode
+    
+    self.nodeCount += 1
+    return True
+```
+
+- **연결 리스트 원소 삽입의 시간 복잡도**
+    - 맨 앞에 삽입하는 경우: O(1)
+    - 중간에 삽입하는 경우: O(n)
+    - 끝에 삽입하는 경우: O(1)
+
+**연산 3. 원소 삭제**
+pos가 가리키는 위치(1 <= ps <= nodeCount) **node를 삭제하는 연산**으로, node의 데이터를 반환한다.
+
+```python
+def popAt(self, pos):
+    if pos < 1 or pos > self.nodeCount:
+        raise IndexError
+    
+    if pos == 1:
+        curr = self.head
+        self.head = curr.next
+
+        if self.nodeCout == 1:
+            self.tail = None
+    
+    else:
+        prev = self.getAt(pos-1)
+        curr = prev.next
+        prev.next = curr.next
+
+        if pos == self.nodeCount:
+            self.tail = prev
+    
+    self.nodeCount -= 1
+    return curr.data
+```
+
+- **연결 리스트 원소 삭제의 시간 복잡도**
+    - 맨 앞에 삽입하는 경우: O(1)
+    - 중간에 삽입하는 경우: O(n)
+    - 끝에 삽입하는 경우: O(n)
+
+**연산 4. 두 리스트의 연결**
+두 연결 리스트 L1과 L2를 이어 붙이기 위해서 연결 리스트 self 뒤에 또 다른 연결 리스트를 이어 붙이는 연산이다.
+
+![두 연결 리스트 연결](/assets/img/contents/linkedlist_concat.png "Linked List Concatenation")
+
+```python
+def concat(self, L):
+    self.tail.next = L.head
+    # L.tail이 None인 경우를 방지
+    if L.tail:
+        self.L.tail
+    self.nodeCount += L.nodeCount
+```
 
