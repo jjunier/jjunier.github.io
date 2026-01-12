@@ -281,3 +281,110 @@ def concat(self, L):
     self.nodeCount += L.nodeCount
 ```
 
+## 자료구조 3 | 확장된 연결 리스트(Extended Linked List)
+---
+연결 리스트는 삽입과 삭제가 유연하다는 가장 큰 장점을 가지고 있다. 하지만, 어느 위치에 노드를 삽입하는 괒에서 삽입 위치까지 따라 가야하는 부담이 존재한다. 
+
+이에 기존의 연결 리스트의 맨 앞에 dummy node를 추가하여 기존의 부담을 해소한다.
+
+![확장된 연결 리스트](/assets/img/contents/extended_linkedlist.png "Extended Linked List")
+
+
+```python
+class LinkedList:
+    def __init__(self):
+        self.nodeCount = 0
+        self.head = None
+        self.tail = None
+        self.head.next = self.tail
+```
+
+## 연결 리스트 연산 네 가지
+---
+**연산 1. 리스트 순회**
+
+```python
+def traverse(self):
+    result = []
+    curr = self.head
+    while curr.next:
+        curr = curr.next
+        result.append(curr.data)
+        
+    return result
+```
+
+**연산 2. 원소의 삽입**
+prev가 가리키는 node 다음에 newNode를 삽입하고 성공/실패 여부에 따라 True/False를 리턴하는 연산이다.
+
+```python
+def insertAfter(self, prev, newNode):
+    newNode.next = prev.next
+    if prev.next is None:
+        self.tail = newNode
+    prev.next = newNode
+    self.nodeCount += 1
+    
+    return True
+```
+
+**연산 3. k번째 원소 얻어내기**
+
+```python
+def getAt(self, pos):
+    if pos < 1 or pos > self.nodeCount:
+        return None
+    i = 0
+    curr = self.head
+    while i < pos:
+        curr = curr.next
+        i += 1
+    
+    return curr
+
+def insertAt(self, pos, newNode):
+    if pos < 1 or pos > self.nodeCount + 1:
+        return False
+    if pos != 1 and pos == self.nodeCount + 1:
+        prev = self.tail
+    else:
+        prev = self.getAt(pos-1)
+    
+    return self.insertAfter(prev, newNode)
+```
+
+**연산 4. 원소의 삭제**
+prev의 다음 node를 삭제하고 그 node의 데이터를 리턴하는 연산이다.
+
+```python
+def popAfter(self, prev):
+    curr = prev.next
+    if curr is None:
+        return None
+    prev.next = curr.next
+    if curr.next is None:
+        self.tail = prev
+    self.nodeCount -= 1
+
+    return curr.data
+
+def popAt(self, pos):
+    if pos < 1 or pos > self.nodeCount:
+        raise IndexError
+    prev = self.getAt(pos-1)
+
+    return self.popAfter(prev)
+```
+
+
+**두 리스트의 연결**
+
+```python
+def concat(self, L):
+    self.tail.next = L.head.next
+    if L.tail:
+        self.tail = L.tail
+    self.nodeCount += L.nodeCount
+```
+## 자료구조 4 | 양방향 연결 리스트(Doubly Linked List)
+---
