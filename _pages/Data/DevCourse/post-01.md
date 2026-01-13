@@ -388,3 +388,93 @@ def concat(self, L):
 ```
 ## 자료구조 4 | 양방향 연결 리스트(Doubly Linked List)
 ---
+기존의 연결 리스트는 한 쪽으로만 링크를 연결하였지만, **앞(다음 node)과 뒤(이전 node)로 각각 양쪽으로 연결**하여 진행 및 연산이 가능한 구조를 말한다.
+
+![양방향 연결 리스트](/assets/img/contents/doubly_linkedlist.png "Doubly Linked List")
+
+```python
+class DoublyLinkedList:
+    def __init__(self, item):
+        self.nodeCount = 0
+        self.head = None
+        self.tail = None
+        self.head.prev = None
+        self.head.next = self.tail
+        self.tail.prev = self.head
+        self.tail.next = None
+```
+
+## 자료구조 5 | 스택(Stack)
+---
+스택은 자료(element)를 보관할 수 있는 선형 구조로써, **데이터 삽입(push 연산)** 시에는 안 쪽 끝에서 밀어 넣어야 하는 제약사항이 있는 자료구조이다. **데이터 삭제(pop 연산)** 시에는 같은 쪽을 뽑아 꺼내야만 한다. 이러한 구조를 **후입 선출(LIFO; Last-In First-Out)**이라고 칭한다.
+
+**스택에서 발생하는 오류**
+1. 비어 있는 스택에서 데이터 원소를 꺼내는 경우
+    -> `스택 언더플로우(Stack Underflow)`
+2. 꽉 찬 스택에 데이터 원소를 넣으려는 경우
+    -> `스택 오버플로우(Stack Overflow)`
+
+### 스택의 연산 정의
+---
+- `size()`: 현재 스택에 담긴 데이터 원소 갯수를 반환한다.
+- `isEmpty()`: 현재 스택이 비어 있는가에 대한 참/거짓을 반환한다.
+- `push(x)`: 데이터 원소 x를 스택의 맨 위에 추가한다.
+- `pop()`: 스택의 맨 위에 저장된 데이터 원소를 제거한다. (혹은 반환한다.)
+- `peek()`:스택의 맨 위에 저장된 데이터 원소를 반환한다. (제거하지 않는다.)
+
+**스택의 추상적 자료구조 구현 01 - 배열**
+Python 리스트와 메서드들을 이용하여 스택을 구현할 수 있다.
+
+```python
+class ArrayStack:
+    # 빈 스택 초기화하는 함수
+    def __init__(self):
+        self.data = []
+    # 스택의 크기를 반환하는 함수
+    def size(self):
+        return len(self.data)
+    # 스택이 비어 있는지 판단
+    def isEmpty(self):
+        return self.size() == 0
+    # 데이터 원소 추가
+    def push(self.item):
+        self.data.append(item)
+    # 데이터 원소 삭제 후 반환
+    def pop(self):
+        return self.data.pop()
+    # 스택의 꼭대기 원소 반환
+    def peek(self):
+        return self.data[-1]
+```
+
+**스택의 추상적 자료구조 구현 02 - 연결 리스트**
+양방향 연결 리스트를 기반으로 하여 스택을 구현할 수 있다.
+
+```python
+class LinkedListStack:
+    def __init__:
+        self.data = DoublyLinkedList()
+    def size(self):
+        return self.data.getLength()
+    def isEmpty(self):
+        return self.size() == 0
+    def push(self.item):
+        node = Node(item)
+        self.data.insertAt(self.size() + 1, node)
+    def pop(self):
+        return self.data.popAt(self.size())
+    def peek(self):
+        return self.data.getAt(self.size()).data
+```
+
+## 자료구조 6 | 큐(Queue)
+---
+스택은 자료(element)를 보관할 수 있는 선형 구조로써, **데이터 삽입(push 연산)** 시에는 안 쪽 끝에서 밀어 넣어야 하는 제약사항이 있는 자료구조이다. **데이터 삭제(pop 연산)** 시에는 반대 쪽을 뽑아 꺼내야만 한다. 이러한 구조를 **선입 선출(FIFO; First-In First-Out)**이라고 칭한다.
+
+### 큐의 연산 정의
+---
+- `size()`: 현재 스택에 담긴 데이터 원소 갯수를 반환한다.
+- `isEmpty()`: 현재 스택이 비어 있는가에 대한 참/거짓을 반환한다.
+- `enqueue(x)`: 데이터 원소 x를 스택의 맨 위에 추가한다.
+- `dequeue()`: 스택의 맨 위에 저장된 데이터 원소를 제거한다. (혹은 반환한다.)
+- `peek()`:스택의 맨 위에 저장된 데이터 원소를 반환한다. (제거하지 않는다.)
