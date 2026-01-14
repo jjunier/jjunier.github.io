@@ -478,3 +478,45 @@ class LinkedListStack:
 - `enqueue(x)`: 데이터 원소 x를 스택의 맨 위에 추가한다.
 - `dequeue()`: 스택의 맨 위에 저장된 데이터 원소를 제거한다. (혹은 반환한다.)
 - `peek()`:스택의 맨 위에 저장된 데이터 원소를 반환한다. (제거하지 않는다.)
+
+**큐의 추상적 자료구조 구현 01 - 배열**
+Python 리스트와 메서드들을 이용하여 스택을 구현할 수 있다.
+
+```python
+class ArrayStack:
+    # 빈 큐를 초기화
+    def __init__(self):
+        self.data = []
+    # 큐의 크기를 리턴
+    def size(self):
+        return len(self.data)
+    # 큐가 비었는 지 판단
+    def isEmpty(self):
+        return self.size() == 0
+    # 데이터 원소를 추가
+    def enqueue(self):
+        self.data.append(item)
+    # 데이터 원소를 삭제(리턴)
+    def dequeue(self):
+        return self.pop(0)
+    # 큐 맨 앞의 원소를 반환
+    def peek(self):
+        return self.data[0]
+```
+
+**배열로 구현한 큐의 연산 복잡도**
+
+|연산|복잡도|
+|---|---|
+|`size()`|O(1)|
+|`isEmpty()`|O(1)|
+|`enqueue()`|O(1)|
+|`dequeue()`|O(n)|
+|`peek()`|O(1)|
+
+**큐의 활용**
+자료를 생성하는 작업과 그 자료를 이용하는 작업이 비동기적(asynchronously)으로 일어나는 경우 
+자료를 생성하는 작업이 한 곳이 아닌 여러 곳에서 일어나는 경우 (producer)
+자료를 이용하는 작업이 여러 곳에서 일어나는 경우(consumer)
+자료를 생성하는 작업과 그 자료를 이용하는 작업이 양쪽 다 여러 곳에서 일어나는 경우
+자료를 처리하여 새로운 자료를 생성하고, 나중에 그 자료를 또 처리해야 하는 작업의 경우
