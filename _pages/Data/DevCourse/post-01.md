@@ -534,3 +534,53 @@ class ArrayStack:
 - `dequeue()`: 스택의 맨 위에 저장된 데이터 원소를 제거한다. (혹은 반환한다.)
 - `peek()`:스택의 맨 위에 저장된 데이터 원소를 반환한다. (제거하지 않는다.)
 
+**환형 큐의 추상적 자료구조 구현 01 - 배열**
+Python 리스트와 메서드들을 이용하여 스택을 구현할 수 있다.
+
+```python
+class CircularQueue:
+    # 빈 큐를 초기화
+    def __init__(self, n):
+        self.maxCount = n
+        self.data = [None] * n
+        self.count = 0
+        self.front = -1
+        self.rear = -1
+    # 현재 큐 길이 반환
+    def size(self):
+        return self.count
+    # 큐가 비어 있는지 확인
+    def isEmpty(self):
+        return self.count == 0
+    # 큐가 가득 차 있는지 확인
+    def isFull(self):
+        return self.count == self.maxCount
+    def enqueue(self, x):
+        if self.isFull():
+            raise IndexError
+        self.rear = 
+        self.data[self.rear] = x
+        self.count += 1
+    def dequeue(self):
+        if self.isEmpty():
+            raise IndexError
+        self.front = 
+        x =
+        self.count -= 1
+
+        return x
+    def peek(self):
+        if self.IsEmpty():
+            raise IndexError
+        
+        return 
+```
+
+## 자료구조 8 | 우선순위 큐(Priority Queue)
+---
+우선순위 큐는 큐가 선입선출(FIFO; First-In First-Out) 방식을 따르지 않고 원소들의 우선 순위에 따라 큐에서 빠져 나오는 방식이다.
+
+**우선순위 큐 구현**
+우선 순위 큐 구현에 있어서 서로 다른 두 가지 방식이 가능하다.
+(1) Enqueue 연산 시, 우선순위 순서를 유지하도록 구현한다.
+(2) Dequeue 연산 시, 우선순위 높은 것을 선택한다.
