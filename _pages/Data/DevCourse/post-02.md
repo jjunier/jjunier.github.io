@@ -473,4 +473,567 @@ find_result = soup.find("div", "page-header")
 find_result.h1.text.strip()
 ```
 
-이 과정은 브라우저에서 개발자 도구를 열어 특정 영역을 클릭하고, 해당 요소의 
+해당 과정은 브라우저에서 개발자 도구를 특정 영역을 클릭하고, 해당 요소의 id나 class를 확인한 뒤 이를 코드로 옮기는 방식과 동일하다.
+
+### 원하는 요소 가져오기 - Hashcode 질문 스크래핑
+---
+일부 웹 사이트는 User-Agent가 없는 요청을 비정상적인 접근으로 판단하여 응답을 제한한다. 따라서 브라우저에서 접속한 것처럼 보이도록 User-Agent를 함께 설정하는 것이 중요하다.
+
+```python
+user_agent = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) \
+    AppleWebKit/537.36 (KHTML, like Gecko) \
+    Chrome/83.0.4103.97 Safari/537.36"
+}
+
+import requests
+from bs4 import BeautifulSoup
+
+res = requests.get("https://hashcode.co.kr/", headers=user_agent)
+soup = BeautifulSoup(res.text, "html.parser")
+```
+
+페이지 구조를 살펴보면, 질문 목록은 특정 li 태그와 class 조합으로 구성되어 있다. 이를 기반으로 질문 제목을 추출할 수 있다.
+
+```python
+questions = soup.find_all("li", "question-list-item")
+
+for question in questions:
+    print(question.find("div", "question").find("div", "top").h4.text)
+```
+
+많은 웹 페이지는 데이터를 여러 페이지로 나누어 제공하는 페이지네이션(Pagination) 방식을 사용한다. 이 경우 URL의 패턴을 분석해 반복적으로 요청을 보내는 방식으로 데이터를 수집할 수 있다.
+
+```python
+import time
+
+for i in range(1, 6):
+    res = requests.get(
+        "https://hashcode.co.kr/?page={}".format(i),
+        headers=user_agent
+    )
+    soup = BeautifulSoup(res.text, "html.parser")
+    
+    questions = soup.find_all("li", "question-list-item")
+    for question in questions:
+        print(question.find("div", "question").find("div", "top").h4.text)
+    
+    # 서버 부하 방지를 위한 딜레이
+    time.sleep(0.5)
+```
+
+## 정적 웹 사이트와 동적 웹 사이트
+---
+지금까지의 웹 스크래핑은 비교적 단순한 HTML 구조를 전제로 했다. 하지만 실제 서비스 환경에서는 HTML이 항상 고정되어 있지 않다. 웹 페이지는 **어떻게 생성되느냐**에 따라 크게 두 가지 유형으로 나뉜다.
+
+**정적(static) 웹사이트**는 서버가 응답할 때 이미 완성된 HTML 문서를 전달한다. 이 경우 브라우저는 HTML을 그대로 렌더링하기만 하면 되며, `requests`와 `BeautifulSoup`만으로도 원하는 정보를 충분히 추출할 수 있다.
+
+반면 **동적(dynamic) 웹사이트**는 서버 응답 이후에도 HTML 내용이 변한다. 초기 응답에는 뼈대만 전달되고, 실제 데이터는 이후에 추가로 채워지는 구조다. 이 과정에서 **렌더링이 완료될 때까지의 지연 시간이 발생**하며, 단순한 HTTP 요청만으로는 완전한 데이터를 얻기 어려운 상황이 생긴다.
+
+### 동적 웹 사이트의 동작 방식
+---
+웹 브라우저 내부에서는 **JavaScript(JS)**라는 프로그래밍 언어가 실행된다. 동적 웹사이트는 이 JavaScript를 이용해 서버와 추가 통신을 수행하고, 필요한 데이터를 화면에 채워 넣는다.
+
+이때 중요한 개념이 **동기 처리**와 **비동기 처리**다.
+
+- 동기 처리에서는 요청을 보낸 뒤 응답이 올 때까지 기다리므로, HTML 로딩에 문제가 없다.
+- 비동기 처리에서는 요청과 응답이 분리되어 실행되기 때문에, HTML이 완전히 렌더링되기 전에 데이터를 추출하면 불완전한 결과를 얻게 될 수 있다.
+
+즉, 동적 웹사이트에서는 “HTML을 받았다”는 사실이 곧 “데이터가 준비되었다”는 의미가 아니다.
+
+## 스크래퍼의 한계점
+---
+지금까지 사용한 `requests` 기반 스크래퍼는 다음과 같은 한계를 가진다.
+
+첫째, 비동기 처리 환경에서는 서버 응답 직후 데이터를 가져오면 아직 로딩되지 않은 상태의 HTML을 얻게 된다. 이를 해결하려면 임의의 시간을 지연한 뒤 데이터를 가져오는 방식이 필요하지만, 이는 안정적인 해결책이 아니다.
+
+둘째, 키보드 입력이나 마우스 클릭과 같은 UI 상호작용은 `requests`로 처리할 수 없다. 실제 사용자처럼 버튼을 누르거나 입력창에 값을 넣기 위해서는 웹 브라우저 자체를 자동으로 조작해야 한다.
+
+이러한 문제를 해결하기 위해 등장한 도구가 바로 `Selenium`이다.
+
+## 브라우저 자동화 도구, Selenium
+---
+`Selenium`은 **웹 브라우저를 실제 사용자처럼 조작할 수 있게 해주는 라이브러리**다. 단순한 HTTP 요청이 아니라, **브라우저를 띄우고, 렌더링이 끝난 화면을 기준으로 요소를 다룬다**는 점이 핵심이다.
+
+```python
+from selenium import webdriver
+
+driver = webdriver.Chrome()
+driver.implicitly_wait(10)
+driver.get("https://example.com")
+
+# UI와 상호작용 가능
+elem = driver.find_element_by_tag_name("hello-input")
+elem.send_keys("Hello!")
+```
+
+이 방식은 동적 웹사이트에서도 렌더링이 완료된 이후의 DOM을 기준으로 데이터를 추출할 수 있게 해준다.
+
+### Selenium 시작하기
+---
+Selenium은 브라우저 드라이버가 필요하며, `webdriver-manager`를 사용하면 이를 자동으로 관리할 수 있다.
+
+```python
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+
+with webdriver.Chrome(service=Service(ChromeDriverManager().install())) as driver:
+    driver.get("https://example.com")
+    print(driver.page_source)
+```
+
+`page_source`를 통해 브라우저가 렌더링을 마친 이후의 HTML을 확인할 수 있다는 점이 중요하다.
+
+**Driver에서 특정 요소 추출하기**
+Selenium에서는 다양한 기준을 통해 요소를 탐색할 수 있다. 가장 기본적인 방식은 태그 단위 탐색이다.
+
+```python
+from selenium.webdriver.common.by import By
+
+driver.find_element(By.TAG_NAME, "p")
+driver.find_elements(By.TAG_NAME, "p")
+```
+
+BeautifulSoup이 **정적인 HTML 파서**라면, Selenium은 **실시간 DOM을 대상으로 한 탐색 도구**라고 볼 수 있다.
+
+### Wait and Call
+---
+동적 웹사이트에서 가장 중요한 개념 중 하나는 **기다림(Wait)**이다.
+요소가 생성되기 전에 접근하면 오류가 발생하기 때문에, Selenium은 두 가지 대기 방식을 제공한다.
+
+**Implicit Wait / Explicit Wait**
+Implicit Wait는 페이지 내 요소가 모두 로딩될 때까지 **지정한 시간만큼 기다리는 방식**이다.
+
+```python
+from selenium.webdriver.support.ui import WebDriverWait
+
+with webdriver.Chrome(service=Service(ChromeDriverManager().install())) as driver:
+    driver.get("https://indistreet.com/live?sortOption=startDate%3AASC")
+    driver.implicitly_wait(10)
+    print(
+        driver.find_element(
+            By.XPATH,
+            '//*[@id="__next"]/div/main/div[2]/div/div[4]/div[1]/div[1]/div/a/div[2]/p[1]'
+        ).text
+    )
+```
+
+반면, Explicit Wait는 **특정 요소가 등장할 때까지 기다리는 방식**으로, 훨씬 정밀한 제어가 가능하다.
+
+```python
+from selenium.webdriver.support import expected_conditions as EC
+
+with webdriver.Chrome(service=Service(ChromeDriverManager().install())) as driver:
+    driver.get("https://indistreet.com/live?sortOption=startDate%3AASC")
+    element = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located(
+            (
+                By.XPATH,
+                '//*[@id="__next"]/div/main/div[2]/div/div[4]/div[1]/div[1]/div/a/div[2]/p[1]'
+            )
+        )
+    )
+    print(element.text)
+```
+
+**마우스 이벤트 처리하기**
+동적 웹사이트에서는 버튼 클릭과 같은 마우스 이벤트가 필수적인 경우가 많다. Selenium의 ActionChains를 이용하면 이러한 이벤트를 처리할 수 있다.
+
+```python
+from selenium import webdriver
+from selenium.webdriver import ActionChains
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
+
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+driver.get("https://hashcode.co.kr/")
+driver.implicitly_wait(0.5)
+
+button = driver.find_element(By.CLASS_NAME, "nav-link.nav-signin")
+ActionChains(driver).click(button).perform()
+```
+
+**키보드 이벤트 처리하기**
+키보드 입력 역시 사용자 행동을 그대로 재현할 수 있다. 이를 통해 로그인과 같은 절차도 자동화가 가능하다.
+
+```python
+from selenium import webdriver
+from selenium.webdriver import ActionChains, Keys
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+driver.get("https://hashcode.co.kr")
+time.sleep(1)
+
+button = driver.find_element(By.CLASS_NAME, "nav-link.nav-signin")
+ActionChains(driver).click(button).perform()
+time.sleep(1)
+
+id_input = driver.find_element(By.ID, "user-email")
+ActionChains(driver).send_keys_to_element(id_input, "여러분의 아이디").perform()
+time.sleep(1)
+
+pw_input = driver.find_element(By.ID, "user-password")
+ActionChains(driver).send_keys_to_element(pw_input, "여러분의 비밀번호").perform()
+time.sleep(1)
+
+login_button = driver.find_element(By.ID, "btn-sig-in")
+ActionChains(driver).click(login_button).perform()
+time.sleep(1)
+```
+
+## 시각화 라이브러리, Seaborn
+---
+문자열이나 숫자의 나열만으로는 패턴이나 경향을 파악하기 어렵기 때문에,
+**시각화는 데이터 분석의 선택이 아니라 필수**에 가깝다.
+
+지금까지 우리는 다양한 기법으로 데이터를 수집할 수 있었다. 하지만 스크래핑 결과가 여기저기 흩어져 있다면, 그 가치를 제대로 전달하기 어렵다.
+
+이때 시각화는 데이터를 **"보는 사람에게 떠먹여 주는 도구"** 역할을 한다.
+
+`seaborn`은 matplotlib을 기반으로 만들어진 **고수준(high-level) 시각화 라이브러리**다. 복잡한 설정 없이도 다양한 그래프를 손쉽게 그릴 수 있다는 점이 큰 장점이다.
+
+```python
+import seaborn as sns
+
+tips = sns.load_dataset("tips")
+
+sns.relplot(
+    data=tips,
+    x="total_bill", y="tip", col="time",
+    hue="smoker", style="smoker", size="size",
+)
+```
+
+간단한 리스트 데이터만으로도 그래프를 그릴 수 있다.
+
+```python
+import seaborn as sns
+
+# Scatterplot을 직접 그려봅시다
+# 값 x=[1, 3, 2, 4]
+# 값 y=[0.7,0.2,0.1,0.05]
+
+sns.lineplot(x=[1, 3, 2, 4], y=[4, 3, 2, 1])
+```
+
+|Line Chart 1|
+|---|
+|![chart01](/assets/img/contents/chart/chart1.png "Line Chart")|
+
+```python
+# Barplot을 직접 그려봅시다
+# 범주 x=[1,2,3,4]
+# 값 y=[0.7,0.2,0.1,0.05]
+
+sns.barplot(x=[1,2,3,4],y=[0.7,0.2,0.1,0.05])
+```
+
+|Bar Chart 1|
+|---|
+|![chart02](/assets/img/contents/chart/chart2.png "Bar Chart")|
+
+matplotlib과 함께 사용하면 제목, 축 이름, 범위 등을 더욱 세밀하게 제어할 수 있다.
+
+```python
+# matplotlib.pyplot을 불러와봅시다.
+
+import matplotlib.pyplot as plt
+
+# 제목을 추가해봅시다.
+
+sns.barplot(x=[1,2,3,4], y=[0.7, 0.2, 0.1, 0.05])
+plt.title("Bar Plot")
+plt.show()
+
+# xlabel과 ylabel을 추가해봅시다.
+
+sns.barplot(x=[1,2,3,4], y=[0.7, 0.2, 0.1, 0.05])
+plt.xlabel("X label")
+plt.ylabel("Y label")
+plt.show()
+```
+
+|Bar Chart 2|Bar Chart 3|
+|---|---|
+|![chart03](/assets/img/contents/chart/chart3.png "Bar Chart")|![chart04](/assets/img/contents/chart/chart4.png "Bar Chart")|
+
+```python
+# lineplot에서 ylim을 2~3으로 제한해봅시다.
+
+sns.lineplot(x=[1,3,2,4], y=[4,3,2,1])
+plt.ylim(0, 10)
+
+plt.show()
+
+# 크기를 (20, 10)으로 지정해봅시다.
+
+sns.lineplot(x=[1,3,2,4], y=[4,3,2,1])
+plt.figure(figsize=(20, 10))
+
+plt.show()
+```
+
+|Line Chart 2|Line Chart 3|
+|---|---|
+|![chart05](/assets/img/contents/chart/chart5.png "Line Chart")|![chart06](/assets/img/contents/chart/chart6.png "Line Chart")|
+
+## 스크래핑 결과 시각화 ① – 날씨 데이터
+---
+**Selenium으로 데이터 수집**
+동적 웹사이트의 데이터를 수집하기 위해 Selenium을 사용해 기상청 날씨 데이터를 가져온다.
+
+```python
+# 스크래핑에 필요한 라이브러리를 불러와봅시다.
+
+from selenium import webdriver
+from selenium.webdriver import ActionChains
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.actions.action_builder import ActionBuilder
+from selenium.webdriver import Keys, ActionChains
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+
+# driver를 이용해 기상청 날씨 데이터를 가져와봅시다.
+
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+driver.get("https://www.weather.go.kr/w/weather/forecast/short-term.do")
+driver.implicitly_wait(1)
+
+temps = driver.find_element(By.ID, "my-tchart").text
+temps = [int(i) for i in temps.replace("℃", "").split("\n")]
+```
+
+수집한 데이터를 바탕으로 꺾은선 그래프를 그려본다.
+
+```python
+# 받아온 데이터를 통해 꺾은선 그래프를 그려봅시다.
+# x = Elapsed Time(0~len(temperatures)
+# y = temperatures
+
+import seaborn as sns
+
+sns.lineplot(
+    x = [i for i in range(len(temps))],
+    y = temps
+)
+```
+
+```python
+# 받아온 데이터를 통해 꺾은선 그래프를 그려봅시다.
+
+import matplotlib.pyplot as plt
+
+plt.ylim(min(temps) - 5 , max(temps) + 5)
+plt.title("Expected Temperature from now on")
+
+sns.lineplot(
+    x = [i for i in range(len(temps))],
+    y = temps
+)
+
+plt.show()
+```
+
+## 스크래핑 결과 시각화 ② – 해시코드 질문 태그
+---
+**질문 태그 빈도 분석**
+해시코드 질문 페이지에서 태그 빈도를 수집하고 시각화한다.
+
+```python
+# 다음 User-Agent를 추가해봅시다.
+
+user_agent = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36"}
+# 필요한 라이브러리를 불러온 후, 요청을 진행해봅시다.
+# 응답을 바탕으로 BeautifulSoup 객체를 생성해봅시다.
+# 질문의 빈도를 체크하는 dict를 만든 후, 빈도를 체크해봅시다.
+
+import time
+
+frequency = {}
+
+import requests
+from bs4 import BeautifulSoup
+
+for i in range(1, 11):
+    res = requests.get("https://hashcode.co.kr/?page={}".format(i), user_agent)
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    # 1. url 태그 모두 찾기
+    # 2. 1번 안에 있는 li 태그의 text 추출
+    
+    ul_tags = soup.find_all("ul", "question-tags")
+    for i in ul_tags:
+        li_tags = ul.find_all("li")
+        for li in li_tags:
+            tag = li.text.strip()
+            if tag not in frequency:
+                frequency[tag] = 1
+            else:
+                frequency[tag] += 1
+    time.sleep(0.5)
+print(frequency)
+```
+
+가장 많이 등장한 태그를 확인한다.
+
+```python
+# Counter를 사용해 가장 빈도가 높은 value들을 추출합니다.
+
+from collections import Counter
+
+counter = Counter(frequency)
+
+counter.most_common(10)
+```
+
+이를 Barplot으로 시각화한다.
+
+```python
+# Seaborn을 이용해 이를 Barplot으로 그립니다.
+
+import seaborn as sns
+
+x = [elem[0] for elem in counter.most_common(10)]
+y = [elem[1] for elem in counter.most_common(10)]
+
+sns.barplot(x=x, y=y)
+
+# figure, xlabel, ylabel, title을 적절하게 설정해서 시각화를 완성해봅시다.
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(20, 10))
+plt.title("Frequency of question in Hashcode")
+plt.xlabel("Tag")
+plt.ylabel("Frequency")
+
+sns.barplot(x=x, y=y)
+
+plt.show()
+```
+
+## 뭉게뭉게 단어구름, WordCloud
+---
+`wordcloud`는 텍스트 데이터의 빈도를 기반으로 단어 구름을 만들어주는 라이브러리이다. 한국어 문장을 다루기 위해서는 형태소 분석기가 필요하며, `konlpy`의 `Hannanum`을 사용한다.
+
+```python
+# 시각화에 쓰이는 라이브러리
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+
+# 횟수를 기반으로 딕셔너리 생성
+from collections import Counter
+
+# 문장에서 명사를 추출하는 형태소 분석 라이브러리
+from konlpy.tag import Hannanum
+
+# 워드클라우드를 만드는 데 사용할 애국가 가사입니다.
+
+national_anthem = """
+동해물과 백두산이 마르고 닳도록
+하느님이 보우하사 우리나라 만세
+무궁화 삼천리 화려 강산
+대한 사람 대한으로 길이 보전하세
+남산 위에 저 소나무 철갑을 두른 듯
+바람 서리 불변함은 우리 기상일세
+무궁화 삼천리 화려 강산
+대한 사람 대한으로 길이 보전하세
+가을 하늘 공활한데 높고 구름 없이
+밝은 달은 우리 가슴 일편단심일세
+무궁화 삼천리 화려 강산
+대한 사람 대한으로 길이 보전하세
+이 기상과 이 맘으로 충성을 다하여
+괴로우나 즐거우나 나라 사랑하세
+무궁화 삼천리 화려 강산
+대한 사람 대한으로 길이 보전하세
+"""
+
+# Hannanum 객체를 생성한 후, .nouns()를 통해 명사를 추출합니다.
+
+hannanum = Hannanum()
+nouns = hannanum.nouns(national_anthem)
+words = [noun for noun in nouns if len(noun) > 1]
+
+words[:10]
+
+# counter를 이용해 각 단어의 개수를 세줍니다.
+
+counter = Counter(words)
+
+# WordCloud를 이용해 텍스트 구름을 만들어봅시다.
+
+wordcloud = WordCloud(
+    font_path="C:\\Users\\yyt11\\EliceDigitalBaeum_Bold.ttf",
+    background_color="white",
+    width=1000,
+    height=1000
+)
+
+img = wordcloud.generate_from_frequencies(counter)
+plt.imshow(img)
+```
+
+|WordCloud|
+|---|
+|![WordCloud](/assets/img/contents/chart/wordcloud.png "WordCloud")|
+
+## WordCloud로 해시코드 질문 키워드 요약
+---
+해시코드 질문 텍스트를 기반으로 주요 키워드를 요약할 수도 있다.
+
+```python
+# 텍스트 구름을 그리기 위해 필요한 라이브러리를 불러와봅시다.
+
+# 시각화에 쓰이는 라이브러리
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+
+# 횟수를 기반으로 딕셔너리 생성
+from collections import Counter
+
+# 문장에서 명사를 추출하는 형태소 분석 라이브러리
+from konlpy.tag import Hannanum
+```
+
+```python
+# Hannanum 객체를 생성한 후, .nouns()를 통해 명사를 추출합니다.
+
+words = []
+Hannanum = Hannanum()
+
+for question in questions:
+    nouns = hannanum.nouns(question)
+    words += nouns
+
+print(len(words))
+```
+
+```python
+# counter를 이용해 각 단어의 개수를 세줍니다.
+
+counter = Counter(words)
+
+counter
+```
+
+```python
+# WordCloud를 이용해 텍스트 구름을 만들어봅시다.
+
+wordcloud = WordCloud(
+    font_path="C:\\Users\\yyt11\\EliceDigitalBaeum_Bold.ttf",
+    background_color="white",
+    width=1000,
+    height=1000
+)
+
+img = wordcloud.generate_from_frequencies(counter)
+plt.imshow(img)
+plt.axis("off")
+plt.show()
+```
