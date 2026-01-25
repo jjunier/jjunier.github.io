@@ -326,6 +326,16 @@ def insertAfter(self, prev, newNode):
     self.nodeCount += 1
     
     return True
+
+def insertAt(self, pos, newNode):
+    if pos < 1 or pos > self.nodeCount + 1:
+        return False
+    if pos != 1 and pos == self.nodeCount + 1:
+        prev = self.tail
+    else:
+        prev = self.getAt(pos-1)
+    
+    return self.insertAfter(prev, newNode)
 ```
 
 **연산 3. k번째 원소 얻어내기**
@@ -341,16 +351,6 @@ def getAt(self, pos):
         i += 1
     
     return curr
-
-def insertAt(self, pos, newNode):
-    if pos < 1 or pos > self.nodeCount + 1:
-        return False
-    if pos != 1 and pos == self.nodeCount + 1:
-        prev = self.tail
-    else:
-        prev = self.getAt(pos-1)
-    
-    return self.insertAfter(prev, newNode)
 ```
 
 **연산 4. 원소의 삭제**
@@ -376,7 +376,6 @@ def popAt(self, pos):
     return self.popAfter(prev)
 ```
 
-
 **두 리스트의 연결**
 
 ```python
@@ -386,6 +385,7 @@ def concat(self, L):
         self.tail = L.tail
     self.nodeCount += L.nodeCount
 ```
+
 ## 자료구조 4 | 양방향 연결 리스트(Doubly Linked List)
 ---
 기존의 연결 리스트는 한 쪽으로만 링크를 연결하였지만, **앞(다음 node)과 뒤(이전 node)로 각각 양쪽으로 연결**하여 진행 및 연산이 가능한 구조를 말한다.
@@ -402,6 +402,174 @@ class DoublyLinkedList:
         self.head.next = self.tail
         self.tail.prev = self.head
         self.tail.next = None
+```
+
+**연산 1. 리스트 순회/역순회**
+
+```python
+def traverse(self):
+    result = []
+    curr = self.head.next
+
+    while curr is not None and curr is not self.tail:
+        result.append(curr.data)
+        curr = curr.next
+
+    return result
+
+def reverse(self):
+    result = []
+    curr = self.tail.prev
+
+    while curr is not None and curr is not self.head:
+        result.append(curr.data)
+        curr = curr.prev
+    
+    return result
+```
+
+**연산 2. 원소의 앞/뒤 삽입**
+prev가 가리키는 node 다음에 newNode를 삽입하고 성공/실패 여부에 따라 True/False를 리턴하는 연산이다.
+
+```python
+def insertAfter(self, prev, newNode):
+    if prev is None or prev is self.tail:
+        return False
+
+    nxt = prev.next
+    if nxt is None:
+        return False
+
+    newNode.prev = prev
+    newNode.next = nxt
+    prev.next = newNode
+    nxt.prev = newNode
+
+    self.nodeCount += 1
+    return True
+
+def insertBefore(self, nxt, newNode):
+    if nxt is None or nxt is self.head:
+        return False
+    
+    prev = nxt.prev
+    if prev is None:
+        # 더미 head 구조에서 nxt.prev가 None이면 구조가 깨진 것
+        return False
+
+    newNode.prev = prev
+    newNode.next = nxt
+    prev.next = newNode
+    nxt.prev = newNode
+
+    self.nodeCount += 1
+    return True
+
+def insertAt(self, pos, newNode):
+    if pos < 1 or pos > self.nodeCount + 1:
+        return False
+
+    prev = self.getAt(pos - 1)
+    if prev is None:
+        return False
+
+    return self.insertAfter(prev, newNode)
+```
+
+**연산 3. k번째 원소 얻어내기**
+
+```python
+def getAt(self, pos):
+    if pos < 0 or pos > self.nodeCount + 1:
+        return None
+
+    # tail까지 포함해 접근 가능하도록 범위를 nodeCount+1로 둔다.
+    # (예: insertAfter(tail.prev, ...) / insertBefore(tail, ...) 같은 조합을 위해)
+    if pos > (self.nodeCount + 1) // 2:
+        # tail에서 뒤로 이동: tail이 (nodeCount+1) 위치
+        i = 0
+        curr = self.tail
+        steps = (self.nodeCount + 1) - pos
+        while i < steps and curr is not None:
+            curr = curr.prev
+            i += 1
+    else:
+        # head에서 앞으로 이동: head가 0 위치
+        i = 0
+        curr = self.head
+        while i < pos and curr is not None:
+            curr = curr.next
+            i += 1
+
+    return curr
+```
+
+**연산 4. 원소의 앞/뒤 삭제**
+prev의 다음 node를 삭제하고 그 node의 데이터를 리턴하는 연산이다.
+
+```python
+def popAfter(self, prev: Node) -> Optional[Any]:
+    if prev is None or prev is self.tail:
+        return None
+
+    curr = prev.next
+    if curr is None or curr is self.tail:
+        return None
+
+    nxt = curr.next
+    if nxt is None:
+        # 더미 tail 구조에서 curr.next가 None이면 구조가 깨진 것
+        return None
+
+    prev.next = nxt
+    nxt.prev = prev
+
+    self.nodeCount -= 1
+
+    # 안전하게 분리(선택 사항)
+    curr.prev = None
+    curr.next = None
+
+    return curr.data
+
+def popBefore(self, nxt: Node) -> Optional[Any]:
+    if nxt is None or nxt is self.head:
+        return None
+
+    curr = nxt.prev
+    if curr is None or curr is self.head:
+        return None
+
+    prev = curr.prev
+    if prev is None:
+        # 더미 head 구조에서 curr.prev가 None이면 구조가 깨진 것
+        return None
+
+    prev.next = nxt
+    nxt.prev = prev
+
+    self.nodeCount -= 1
+
+    # 안전하게 분리(선택 사항)
+    curr.prev = None
+    curr.next = None
+
+    return curr.data
+
+def popAt(self, pos):
+    if pos < 1 or pos > self.nodeCount:
+        raise IndexError("pos out of range")
+
+    prev = self.getAt(pos - 1)
+    if prev is None:
+        raise IndexError("pos out of range")
+
+    data = self.popAfter(prev)
+    if data is None:
+        # 범위 검증을 했으므로 보통 발생하지 않지만, 방어적으로 처리
+        raise IndexError("pos out of range")
+
+    return data
 ```
 
 ## 자료구조 5 | 스택(Stack)
@@ -483,7 +651,7 @@ class LinkedListStack:
 Python 리스트와 메서드들을 이용하여 스택을 구현할 수 있다.
 
 ```python
-class ArrayStack:
+class ArrayQueue:
     # 빈 큐를 초기화
     def __init__(self):
         self.data = []
@@ -514,6 +682,49 @@ class ArrayStack:
 |`dequeue()`|O(n)|
 |`peek()`|O(1)|
 
+**큐의 추상적 자료구조 구현 02 - 연결 리스트**
+양방향 연결 리스트를 기반으로 하여 스택을 구현할 수 있다.
+
+```python
+class LinkedListQueue:
+    # 빈 큐를 초기화
+    def __init__(self):
+        self.data = DoublyLinkedList()
+    # 큐의 크기를 리턴
+    def size(self):
+        return self.data.getLength()
+    # 큐가 비었는 지 판단
+    def isEmpty(self):
+        return self.size() == 0
+    # 데이터 원소를 추가
+    def enqueue(self):
+        node = Node(item)
+        self.data.insertAt(self.size() + 1, node)
+    # 데이터 원소를 삭제(리턴)
+    def dequeue(self):
+        return self.data.popAt(1)
+    # 큐 맨 앞의 원소를 반환
+    def peek(self):
+        if self.isEmpty():
+            raise IndexError("peek from empty queue")
+        
+        node = self.data.getAt(1)
+        if node is None:
+            raise RuntimeError("LinkedList is corrupted: getAt returned None")
+        
+        return node.data
+```
+
+**연결 리스트로 구현한 큐의 연산 복잡도**
+
+|연산|복잡도|
+|---|---|
+|`size()`|O(1)|
+|`isEmpty()`|O(1)|
+|`enqueue()`|O(1)|
+|`dequeue()`|O(1)|
+|`peek()`|O(1)|
+
 **큐의 활용**
 자료를 생성하는 작업과 그 자료를 이용하는 작업이 비동기적(asynchronously)으로 일어나는 경우 
 자료를 생성하는 작업이 한 곳이 아닌 여러 곳에서 일어나는 경우 (producer)
@@ -534,7 +745,7 @@ class ArrayStack:
 - `dequeue()`: 스택의 맨 위에 저장된 데이터 원소를 제거한다. (혹은 반환한다.)
 - `peek()`:스택의 맨 위에 저장된 데이터 원소를 반환한다. (제거하지 않는다.)
 
-**환형 큐의 추상적 자료구조 구현 01 - 배열**
+**환형 큐의 추상적 자료구조 구현 - 배열**
 Python 리스트와 메서드들을 이용하여 스택을 구현할 수 있다.
 
 ```python
@@ -584,3 +795,50 @@ class CircularQueue:
 우선 순위 큐 구현에 있어서 서로 다른 두 가지 방식이 가능하다.
 (1) Enqueue 연산 시, 우선순위 순서를 유지하도록 구현한다.
 (2) Dequeue 연산 시, 우선순위 높은 것을 선택한다.
+
+### 우선순위 큐의 연산 정의
+---
+- `size()`: 현재 스택에 담긴 데이터 원소 갯수를 반환한다.
+- `isEmpty()`: 현재 스택이 비어 있는가에 대한 참/거짓을 반환한다.
+- `isFull()`: 큐에 데이터 원소가 꽉 차 있는지를 판단한다.
+- `enqueue(x)`: 데이터 원소 x를 스택의 맨 위에 추가한다.
+- `dequeue()`: 스택의 맨 위에 저장된 데이터 원소를 제거한다. (혹은 반환한다.)
+- `peek()`:스택의 맨 위에 저장된 데이터 원소를 반환한다. (제거하지 않는다.)
+
+```python
+class PriorityQueue:
+    def __init__(self):
+        self.queue = DoublyLinkedList()
+    def size(self):
+        return self.queue.getLength()
+    def isEmpty(self):
+        return self.size() == 0
+    def enqueue(self, x):
+        newNode = Node(x)
+        curr = self.queue.head
+
+        while True:
+            assert curr.next is not None
+            if curr.next is self.queue.tail:
+                break
+            if not (x < curr.next.data):
+                break
+            curr = curr.next
+
+        self.queue.insertAfter(curr, newNode)
+    def dequeue(self):
+        if self.isEmpty():
+            raise IndexError("dequeue from empty priority queue")
+
+        return self.queue.popAt(self.queue.getLength())
+    def peek(self):
+        if self.isEmpty():
+            raise IndexError("peek from empty priority queue")
+
+        node = self.queue.getAt(self.queue.getLength())
+        if node is None:
+            # 논리적으로는 여기 오면 내부 구조가 깨진 것
+            raise RuntimeError("Linked list is corrupted: getAt returned None")
+
+        return node.data
+```
