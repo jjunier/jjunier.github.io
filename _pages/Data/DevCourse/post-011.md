@@ -11,9 +11,9 @@ bookmark: true
 
 ## 이번 주 학습 목표 
 --- 
-- 
-- 
-- 
+- Hadoop과 Spark의 등장 배경 및 아키텍처(`HDFS`, `YARN`, `MapReduce`, `Spark Core`)를 이해하고, **대용량 데이터를 분산 환경에서 처리해야 하는 이유를 설명**할 수 있다.
+- Spark의 실행 모델과 데이터 처리 방식(`DataFrame`, `Partition`, `Shuffle`, `Job·Stage·Task`)을 이해하고, **성능에 영향을 주는 핵심 요소를 파악**할 수 있다.
+- `Parquet`, `Partitioning`, `Bucketing`과 같은 **저장 및 처리 최적화 기법을 이해**하고, 실무 관점에서 **효율적인 대규모 데이터 처리 파이프라인을 설계**할 수 있다.
 
 ## 빅데이터 정의와 예
 ---
@@ -291,3 +291,232 @@ YARN에서는 두 가지 실행 모드가 제공된다:
 |local[n]|Client|Spark Shell, IDE, 노트북|
 |YARN|Client|Spark Shell, 노트북|
 |YARN|Cluster|spark-submit|
+
+## Spark 데이터 처리
+---
+**Spark 데이터 시스템 아키텍처**
+
+![Spark Architecture](/assets/img/contents/spark_arch.png "Spark Architecture")
+
+**데이터 병렬처리를 위한 전제 조건**
+데이터 병렬 처리가 가능하려면, 가장 먼저 **데이터가 분산되어 있어야 한다.** Hadoop과 Spark 모두 데이터를 나누어 처리하는 구조를 전제로 한다.
+
+Hadoop MapReduce에서는 데이터 처리의 최소 단위가 **HDFS 블록**이며, 기본 크기는 **128MB**이며, 이 값은 `hdfs-site.xml`의 `dfs.block.size` 설정에 의해 결정된다. 하나의 파일이 여러 블록으로 나뉘면, 각 블록마다 Map 태스크가 실행된다.
+
+Spark에서는 이 개념을 **파티션(Partition)**이라 부른다. Spark 역시 기본 파티션 크기는 128MB이며, 파일을 읽을 때는 `spark.sql.files.maxPartitionBytes` 설정이 적용된다. 분산된 데이터는 파티션 단위로 메모리에 로드되고, 각 파티션이 Executor에 할당되어 병렬 처리된다.
+
+![Parallel Processing](/assets/img/contents/parallel.png "Parallel Processing")
+
+**Spark 데이터 처리 흐름**
+Spark에서 DataFrame은 **여러 개의 작은 파티션으로 구성된 논리적 데이터 집합**이다. DataFrame은 생성 이후 수정할 수 없는 **Immutable 구조**를 가지며, 이는 분산 처리 환경에서 일관성과 안정성을 보장한다.
+
+Spark의 데이터 처리는 입력 DataFrame을 시작으로, 원하는 결과가 나올 때까지 **연속적인 변환(Transformation)**을 수행하는 방식으로 이루어진다. 예를 들어 `filter`, `map`, `groupBy`, `join`, `sort`와 같은 연산들이 단계적으로 적용되며, 각 단계는 새로운 DataFrame을 생성한다.
+
+![Spark Data Processing](/assets/img/contents/spark_data_proc.png "Spark Data Processing")
+
+**셔플링(Shuffling)**
+셔플링은 **파티션 간 데이터 이동이 필요한 경우에 발생**한다. 대표적인 예는 파티션 수를 명시적으로 변경하는 경우나, 시스템 내부적으로 데이터 재배치가 필요한 연산이다.
+
+예를 들어 `groupBy`, `aggregation`, `sort`와 같은 연산은 동일한 키를 가진 데이터를 한 파티션으로 모아야 하므로, 네트워크를 통해 데이터가 이동하는 셔플링이 발생한다. 이 과정은 Spark 성능에 큰 영향을 미친다.
+
+셔플 이후 생성되는 파티션 수는 `spark.sql.shuffle.partitions` 설정에 의해 결정되며, 기본값은 200이다. 이는 최대 파티션 수를 의미하며, 실제 파티션 수는 연산 방식에 따라 달라질 수 있다. Spark는 랜덤 파티셔닝, 해시 파티셔닝, 레인지 파티셔닝 등을 사용하며, 정렬 연산의 경우 주로 레인지 파티셔닝을 사용한다.
+
+셔플링이 발생하는 시점에서는 **Data Skew가 발생할 가능성도 함께 존재**한다. 특정 키에 데이터가 집중될 경우 일부 파티션이 과도한 데이터를 처리하게 되어 전체 작업 성능을 저하시킬 수 있다.
+
+**셔플링: hashing partition**
+Spark에서 **Hash Partition**은 셔플링이 발생하는 대표적인 파티셔닝 방식 중 하나이다. 주로 **Aggregation 연산**에서 사용되며, 동일한 키를 가진 데이터가 반드시 같은 파티션으로 모이도록 보장한다.
+
+Hash Partition은 레코드의 키 값을 해시 함수에 입력하고, 그 결과를 파티션 수로 나눈 값을 기준으로 파티션을 결정한다. 이 방식은 `groupBy`, `count`, `sum`과 같은 집계 연산에서 자연스럽게 사용된다.
+
+Aggregation 연산에서는 동일 키에 대한 모든 레코드가 한 Reducer(또는 Spark의 경우 하나의 파티션)에서 처리되어야 하므로, 셔플 단계에서 **네트워크를 통한 데이터 재배치가 발생**한다. 이 과정은 데이터 규모가 클수록 비용이 커지며, Spark 성능 튜닝의 주요 고려 대상이 된다.
+
+Hash Partition은 구현이 단순하고 균등 분산을 기대할 수 있지만, 키 분포가 불균형한 경우 **Data Skew**가 발생할 수 있다는 단점이 있다. 따라서 대규모 Aggregation 작업에서는 파티션 수 조정이나 키 설계에 대한 사전 고려가 필요하다.
+
+![Hashing Partition](/assets/img/contents/hashing_partition.png "Hashing Partition")
+
+**Data Skewness**
+Data Skewness는 **분산 데이터 처리에서 데이터가 파티션 간에 균등하게 분포되지 않는 현상을 의미**한다. 데이터 파티셔닝은 병렬 처리를 가능하게 해 성능을 향상시키지만, 데이터 분포가 치우친 경우에는 오히려 성능 저하의 원인이 된다.
+
+이 문제는 **주로 셔플링 이후에 발생**한다. `groupBy`, `join`, `aggregation`과 같은 연산에서 특정 키에 데이터가 집중되면, 일부 파티션이 과도한 데이터를 처리하게 된다. 그 결과 가장 느린 태스크가 전체 작업 시간을 결정하게 되어 병렬 처리의 이점이 크게 감소한다.
+
+따라서 분산 처리 환경에서는 **셔플링을 최소화하는 것이 매우 중요**하며, 불가피하게 셔플이 발생하는 경우에는 **파티션 수 조정이나 키 설계와 같은 파티션 최적화 전략이 필요**하다. Data Skew를 인지하고 이를 완화하는 설계는 Spark 성능 튜닝의 핵심 요소 중 하나이다.
+
+## Spark 데이터 구조: RDD, DataFrame, Dataset
+---
+Spark는 분산 환경에서 데이터를 처리하기 위해 **Immutable Distributed Data** 구조를 사용한다. 대표적인 데이터 구조로는 **RDD, DataFrame, Dataset**이 있으며, 이들은 모두 내부적으로 여러 개의 파티션으로 분할되어 병렬 처리된다.
+
+2016년 이후 Spark에서는 DataFrame과 Dataset이 하나의 통합된 API로 정리되었으며, 사용 언어에 따라 노출되는 방식만 달라졌다.
+
+![Spark DataStructures](/assets/img/contents/spark_datastructure.png "Spark DataStructures")
+
+### RDD(Resilient Distributed Dataset)
+---
+RDD는 Spark의 가장 기본적인 데이터 구조로, **클러스터 내 여러 서버에 분산 저장된 로우레벨 데이터 집합을 의미**한다. 각 레코드는 독립적으로 존재하며, **스키마 정보가 없다는 것이 특징**이다. 이로 인해 구조화된 데이터와 비구조화된 데이터 모두를 처리할 수 있다.
+
+RDD는 여러 개의 파티션으로 구성되며, `map`, `filter`, `flatMap`과 같은 **로우레벨 함수형 변환을 지원**한다. 일반적인 파이썬 컬렉션은 `parallelize` 함수를 통해 RDD로 변환할 수 있고, 반대로 `collect`를 사용하면 로컬 파이썬 데이터로 가져올 수 있다.
+
+### DataFrame과 Dataset
+---
+DataFrame과 Dataset은 RDD 위에 구축된 **고수준 데이터 구조**로, RDD와 달리 명확한 필드(컬럼) 정보를 가진다. 개념적으로는 관계형 데이터베이스의 테이블이나 Pandas DataFrame과 매우 유사하다.
+
+Dataset은 컬럼에 대한 타입 정보를 포함하며, 이는 컴파일 언어인 **Scala와 Java**에서만 사용할 수 있다. 반면 PySpark에서는 DataFrame API만 제공된다.
+
+DataFrame은 HDFS, Hive, 외부 데이터베이스, 기존 RDD 등 **다양한 데이터 소스로부터 생성**할 수 있으며, Scala, Java, Python 등 여러 언어에서 동일한 추상화로 사용할 수 있다.
+
+## 프로그램 구조
+---
+Spark 프로그램의 시작점은 **SparkSession을 생성**하는 것이다. SparkSession은 하나의 애플리케이션당 하나만 생성되는 Singleton 객체로, Spark 클러스터와의 모든 통신을 담당한다. 이 개념은 Spark 2.0부터 도입되었다.
+
+SparkSession을 통해 Spark가 제공하는 다양한 기능을 사용할 수 있다. DataFrame과 SQL 처리뿐만 아니라 Streaming, ML API 역시 모두 SparkSession을 통해 접근한다. 환경 설정은 `config` 메서드를 사용해 지정할 수 있으며, RDD와 관련된 작업을 수행할 때는 **SparkSession 하위의 sparkContext 객체를 사용**한다.
+
+**SparkSession이란?**
+Spark 프로그램의 시작점은 S**parkSession을 생성하는 것**이다. SparkSession은 하나의 애플리케이션당 하나만 생성되는 **Singleton 객체**로, Spark 클러스터와의 모든 통신을 담당한다. 이 개념은 Spark 2.0부터 도입되었다.
+
+SparkSession을 통해 Spark가 제공하는 다양한 기능을 사용할 수 있다. DataFrame과 SQL 처리뿐만 아니라 Streaming, ML API 역시 모두 SparkSession을 통해 접근한다. 환경 설정은 `config` 메서드를 사용해 지정할 수 있으며, RDD와 관련된 작업을 수행할 때는 SparkSession 하위의 **sparkContext 객체를 사용**한다.
+
+**SparkSession 주요 환경 변수**
+SparkSession을 생성할 때는 다양한 환경 변수를 설정할 수 있다. 대표적인 예는 다음과 같다.
+- spark.executor.memory: Executor 당 메모리 크기 (기본값 1g)
+- spark.executor.cores: Executor 당 CPU 코어 수 (YARN 기준 기본값 1)
+- spark.driver.memory: Driver 메모리 크기 (기본값 1g)
+- spark.sql.shuffle.partitions: 셔플 이후 생성되는 파티션 수 (기본값 최대 200)
+
+실제로 사용할 수 있는 환경 변수는 매우 다양하며, 사용하는 **리소스 매니저(YARN, Kubernetes 등)**에 따라 설정 가능한 옵션도 달라진다.
+
+```python
+from pyspark.sql import SparkSession
+
+# SparkSession은 싱글턴
+spark = SparkSession.builder\
+    .maaster("local[*]")\
+    .appName('PySpark Tutorial')\
+    .getOrCreate()
+
+spark.stop
+```
+
+**SparkSession 환경 설정 방법**
+Spark 환경 설정은 여러 방식으로 적용할 수 있다.
+
+첫째, **환경 변수**를 통해 전역 설정이 가능하다.
+둘째, `$SPARK_HOME/conf/spark-defaults.conf` 파일에 기본값을 정의할 수 있다.
+셋째, `spark-submit` 명령 실행 시 **커맨드라인 파라미터로 설정**할 수 있으며, 이는 실행 단위의 설정에 유용하다.
+마지막으로 SparkSession을 생성할 때 코드 레벨에서 직접 설정할 수도 있다.
+
+이러한 다양한 설정 방식을 통해 개발 환경과 운영 환경에 맞는 Spark 실행 구성을 유연하게 관리할 수 있다.
+
+```python
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder\
+    .maaster("local[*]")\
+    .appName('PySpark Tutorial')\
+    .config("spark.some.config.option1", "some-value")\
+    .config("spark.some.config.option2", "some-value")\
+    .getOrCreate()
+```
+
+```python
+from pyspark.sql import SparkSession
+from pyspark import SparkConf
+
+conf = SparkConf()
+conf.set("spark.app.name", "PySpark Tutorial")
+conf.set("spark.master", "local[*]")
+
+# SparkSession은 싱글턴
+spark = SparkSession.builder\
+    .config(conf=conf) \
+    .getOrCreate()
+```
+
+**Spark 데이터 처리의 전체적인 흐름**
+Spark 애플리케이션은 일정한 처리 흐름을 따른다. 가장 먼저 **SparkSession을 생성**하며, 이를 통해 Spark 클러스터와 통신을 시작한다. SparkSession은 애플리케이션의 진입점 역할을 한다.
+
+다음으로 **입력 데이터를 로딩**한다. 이 단계에서 데이터는 DataFrame 형태로 로드되며, 이후 모든 처리는 이 DataFrame을 중심으로 이루어진다.
+
+데이터 로딩 이후에는 **데이터 조작 작업**이 수행된다. 이 과정은 Pandas와 매우 유사하며, DataFrame API나 Spark SQL을 사용해 `filter`, `groupBy`, `join` 등의 연산을 적용한다. Spark의 데이터 구조는 Immutable하기 때문에, 각 연산은 기존 DataFrame을 수정하는 것이 아니라 **새로운 DataFrame을 생성**한다. 원하는 결과가 나올 때까지 이러한 변환을 반복한다.
+
+마지막으로 **최종 결과를 저장**한다. 결과 데이터는 파일 시스템이나 데이터베이스 등 다양한 저장소로 출력될 수 있다.
+
+**SparkSession이 지원하는 데이터 소스**
+SparkSession은 다양한 데이터 소스를 통합적으로 지원한다. 데이터 로딩 시에는 `spark.read`(DataFrameReader)를 사용해 DataFrame으로 불러오고, 저장 시에는 `DataFrame.write`(DataFrameWriter)를 사용한다.
+
+Spark에서 자주 사용되는 데이터 소스는 다음과 같다:
+
+- **HDFS 파일**: CSV, JSON, Parquet, ORC, Text, Avro 등의 포맷을 지원한다. 이 중 Parquet, ORC, Avro와 같은 컬럼 기반 포맷은 대규모 데이터 처리에 특히 유리하다.
+- **Hive 테이블**: 메타스토어를 통해 Hive 테이블을 직접 DataFrame으로 로드할 수 있다.
+- **JDBC 기반 관계형 데이터베이스**: MySQL, PostgreSQL 등 전통적인 RDBMS와 연동 가능하다.
+- **클라우드 기반 데이터 시스템**: S3, GCS, Azure Storage 등과 같은 클라우드 스토리지를 지원한다.
+- **스트리밍 시스템**: Kafka와 같은 스트리밍 데이터 소스를 통해 실시간 데이터 처리도 가능하다.
+
+## Spark 데이터베이스
+---
+**카탈로그(Catalog)**
+Spark에서는 **카탈로그(Catalog)**를 통해 테이블과 뷰에 대한 **메타데이터를 관리**한다. 기본적으로 Spark는 메모리 기반 카탈로그를 제공하며, 이는 세션 단위로 유지되어 SparkSession이 종료되면 함께 사라진다.
+
+보다 영속적인 메타데이터 관리를 위해 **Spark는 Hive와 호환되는 카탈로그**를 지원한다. 이 경우 메타데이터는 외부 메타스토어에 저장되며, 세션 종료 이후에도 유지된다.
+
+**데이터베이스와 테이블 관리 방식**
+Spark에서 테이블은 **데이터베이스(Database)**라 불리는 논리적 단위로 관리된다. 데이터베이스는 파일 시스템 상의 폴더와 유사한 역할을 하며, 테이블과 뷰를 계층적으로 관리하는 2단계 구조를 가진다.
+
+**메모리 기반 테이블과 뷰**
+메모리 기반 테이블과 뷰는 **임시 테이블**로, 주로 세션 내에서만 사용된다. 앞서 사용한 임시 뷰들이 이에 해당하며, SparkSession이 종료되면 자동으로 제거된다. 빠른 실험이나 중간 결과를 확인하는 용도로 적합하다.
+
+**스토리지 기반 테이블**
+스토리지 기반 테이블은 실제 데이터가 파일 시스템에 저장되는 테이블이다. 기본적으로 **HDFS와 Parquet 포맷을 사용**하며, 메타데이터는 Hive와 호환되는 메타스토어를 통해 관리된다.
+
+스토리지 기반 테이블은 Hive와 동일하게 두 가지 유형으로 구분된다.
+**Managed Table은 Spark가 데이터와 메타데이터를 모두 관리하는 테이블**이며, 테이블 삭제 시 실제 데이터도 함께 제거된다.
+반면 **Unmanaged(External) Table**은 Spark가 메타데이터만 관리하며, 실제 데이터는 외부에서 관리된다. 이 경우 테이블을 삭제해도 데이터 파일은 유지된다.
+
+![Spark Database](/assets/img/contents/spark_db.png "Spark Database")
+
+
+## Spark 파일 포맷
+---
+**Parquet: Spark의 기본 파일 포맷**
+Parquet는 Spark에서 기본적으로 사용되는 **컬럼 지향(Columnar) 파일 포맷**이다. 트위터와 클라우데라가 공동으로 개발했으며, Hadoop 생태계 전반에서 표준 포맷으로 자리 잡았다. Parquet는 컬럼 단위 저장 방식을 통해 디스크 I/O를 최소화하고, 압축 효율을 높이며, 대규모 분석 쿼리에 최적화된 성능을 제공한다.
+
+**Spark 실행 단위: Job, Stage, Task**
+Spark에서 코드 실행은 **Action을 기점으로 실제 수행**된다. 하나의 Action은 하나의 Job을 생성하며, Job은 하나 이상의 Stage로 구성된다.
+
+Stage는 **셔플링이 발생하는 지점을 기준으로 분리**된다. 즉, 셔플이 없는 연산들은 하나의 Stage로 묶이고, 셔플이 발생하면 새로운 Stage가 생성된다. 각 Stage는 DAG 형태로 구성된 여러 Task를 포함하며, 이 Task들은 병렬로 실행된다.
+
+Task는 **Spark 실행의 가장 작은 단위**로, 각 Executor에 의해 실제로 수행된다. 전체 실행 성능은 Task 수, 파티션 수, 그리고 셔플 구조에 크게 영향을 받는다.
+
+## Execution Plan
+---
+**Bucketing과 File System Partitioning**
+Spark에서는 데이터를 저장할 때 이후의 반복 처리 성능을 고려한 저장 최적화 전략을 사용할 수 있다. 대표적인 방법이 Bucketing과 File System Partitioning이며, 두 방식 모두 **Hive 메타스토어를 사용하는 테이블(saveAsTable)**에서 활용된다.
+
+```python
+spark.read.option("header", True). \
+    csv(“test.csv”). \
+    where("gender <> 'F'"). \
+    select("name", "gender"). \
+    groupby("gender"). \
+    count(). \
+    show()
+```
+
+## Bucketing과 Partitioning
+---
+**Bucketing**
+Bucketing은 DataFrame을 특정 컬럼(ID 등)을 기준으로 **해시 분할하여 테이블로 저장하는 방식**이다. 주로 Aggregation, Window 함수, Join에서 자주 사용되는 컬럼이 있을 때 효과적이다.
+
+버킷 수와 기준 컬럼을 지정해 데이터를 저장하면, 이후 동일한 조건의 연산에서 데이터 재분배 비용이 줄어들어 반복 처리 성능이 향상된다. Spark에서는 `DataFrameWriter.bucketBy()` 함수를 사용해 Bucketing을 적용한다. 이 방식은 데이터 특성을 잘 알고 있는 경우에 특히 유용하다.
+
+**File System Partitioning**
+File System Partitioning은 Hive에서 널리 사용되던 방식으로, 특정 컬럼 값을 기준으로 **디렉토리 구조를 나누어 데이터를 저장**한다. 이때 사용되는 컬럼을 Partition Key라고 부른다.
+
+이 방식은 조건절에 Partition Key가 포함될 경우 불필요한 데이터 스캔을 줄여주며, 대규모 테이블 조회 성능을 크게 개선한다
+
+
+**Partitioning의 예와 장점**
+예를 들어 매우 큰 로그 데이터를 자주 조회하는 상황에서, 데이터 생성 시간을 기준으로 데이터를 읽는 경우가 많다면 **연도–월–일과 같은 디렉토리 구조로 데이터를 저장하는 것이 효과적**이다. 실제로 많은 로그 데이터는 이미 이러한 형태로 수집·저장된다.
+
+이와 같은 파티셔닝 구조를 사용하면, 조회 시 조건에 해당하는 폴더만 스캔하게 되어 **불필요한 데이터 읽기 비용이 크게 줄어든다.** 그 결과 쿼리 성능이 개선되며, 데이터 스캔 자체가 발생하지 않는 경우도 있다. 또한 기간 단위로 데이터를 관리할 수 있어 **Retention Policy 적용**과 같은 운영 작업도 수월해진다.
+
+**Partitioning 적용 시 주의사항**
+Spark에서는 `DataFrameWriter.partitionBy()`를 사용해 File System Partitioning을 적용한다. 다만 Partition Key를 잘못 선택할 경우, 파티션 수가 과도하게 늘어나 **매우 많은 작은 파일들이 생성**될 수 있다. 이는 메타데이터 관리 부담과 성능 저하로 이어질 수 있으므로, 파티션 키는 데이터 접근 패턴과 카디널리티를 고려해 신중하게 선택해야 한다.
