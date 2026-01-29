@@ -11,9 +11,9 @@ bookmark: true
 
 ## 이번 주 학습 목표
 ---
-- 
-- 
-- 
+- 이벤트 중심 아키텍처의 관점에서 **실시간 데이터 처리 흐름과 Kafka 기반 스트리밍 파이프라인의 구조를 이해**한다.
+- **Kafka의 핵심 구성 요소(Topic, Partition, Broker, Consumer Group, Connect 등)와 메시지 처리 보장 방식을 이해**하고, 실무 환경에서의 설계 선택 기준을 정리한다.
+- Spark Structured Streaming의 **마이크로 배치 처리 모델과 Source–Sink 구조를 이해하고, Kafka와 연계한 실시간 데이터 처리 파이프라인을 설계**할 수 있다.
 
 ## 데이터 처리의 발전 단계
 ---
