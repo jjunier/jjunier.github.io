@@ -654,3 +654,73 @@ CREATE STREAM my_stream (id STRING, name STRING, title STRING) with (kafka_topic
 
 SELECT * FROM my_stream;
 ```
+
+## Spark Streaming 소개
+---
+Spark Streaming은 **실시간 데이터 스트림 처리를 위한 Spark의 API**다. Kafka, Kinesis, Flume, TCP 소켓 등 다양한 소스로부터 유입되는 데이터를 처리할 수 있으며, 배치 처리에서 사용하던 Join, Map, Reduce, Window와 같은 고급 연산을 그대로 사용할 수 있다.
+
+이로 인해 기존 배치 처리 로직을 크게 변경하지 않고도 실시간 처리로 확장할 수 있다는 장점이 있다.
+
+**Spark Streaming의 동작 방식**
+Spark Streaming은 데이터를 완전히 실시간으로 처리하기보다는, **마이크로 배치(Micro-batch) 방식으로 처리**한다. 일정 시간 동안 수집된 데이터를 하나의 작은 배치로 묶어 처리하고, 이 과정을 반복적으로 수행한다.
+
+각 배치마다 데이터의 시작과 끝 위치를 관리하며, 이전 배치에서 처리된 데이터와 병합해 전체 스트림 상태를 유지한다. 장애가 발생할 경우에는 데이터를 다시 처리할 수 있도록 설계되어 있어, Fault Tolerance와 데이터 재처리가 가능하다.
+
+**Spark Streaming의 내부 동작**
+내부적으로 Spark Streaming은 **실시간 입력 스트림을 여러 개의 배치로 나눈 뒤, 이를 Spark Engine에서 처리**한다. 처리 결과는 다시 스트림 형태로 이어져 최종 결과를 만들어낸다.
+
+Spark Streaming에는 두 가지 주요 추상화가 존재한다. 초기 방식인 `DStream`과, 이후 등장한 `Structured Streaming`이다. 
+
+|DStream|Structured Streaming|
+|---|---|
+|RDD 기반 스트리밍 처리|DataFrame 기반 스트리밍 처리|
+|Spark SQL 엔진의 최적화 기능 사용 불가|Catalyst 기반 최적화 혜택을 가져감|
+|이벤트 발생 시간 기반 처리 불가|이벤트 발생 시간 기반 처리 가능|
+|개발이 중단된 상태|계속해서 기능이 추가되고 있음|
+
+**Structured Streaming은 더 선언적인 API와 강력한 최적화 기능을 제공**하며, 현재 Spark 실시간 처리의 중심 모델로 자리 잡고 있다.
+
+![Spark Streaming 내부 구조](/assets/img/contents/spark_streaming_internal.png "Spark Streaming 내부 구조")
+
+### Source & Sink
+---
+Spark Structured Streaming에서 스트리밍 처리를 이해하는 핵심은 **Source와 Sink** 개념이다. Source와 Sink는 **외부 시스템과 Spark 사이에서 데이터를 주고받는 역할**을 하며, **스트리밍 파이프라인의 시작과 끝을 구성**한다.
+
+![Spark Streaming 전체 구조](/assets/img/contents/spark_streaming_architecture.png "Spark Streaming 전체 구조")
+
+**Source**
+Source는 외부 시스템에서 발생하는 스트리밍 데이터를 Spark Structured Streaming으로 수집할 수 있도록 해주는 구성 요소다. Kafka, Amazon Kinesis, Apache Flume, TCP/IP 소켓, HDFS, 파일 시스템 등 다양한 데이터 소스를 지원한다.
+
+Structured Streaming에서 Source를 통해 읽어온 데이터는 결국 **Spark DataFrame**으로 변환된다. 이 덕분에 스트리밍 데이터라 하더라도 배치 처리와 동일한 DataFrame API를 사용할 수 있다. 예를 들어 Kafka에 저장된 데이터를 Spark Structured Streaming으로 수집하려는 경우, Kafka Source를 사용해 하나 이상의 Topic에서 데이터를 읽어 DataFrame 형태로 변환할 수 있다.
+
+배치 처리와의 가장 큰 차이점은 `read`가 아닌 `readStream` API를 사용한다는 점이다. 이를 통해 Spark는 해당 DataFrame이 지속적으로 갱신되는 스트리밍 데이터임을 인식하게 된다.
+
+```python
+lines_df = spark.readStream \
+    .format("socket") \
+    .option("host", "localhost") \
+    .option("port", "9999") \
+    .load()
+```
+
+**Sink**
+Sink는 Spark Structured Streaming에서 처리된 데이터를 **외부 시스템이나 스토리지로 출력하는 역할**을 한다. 즉, 스트리밍 파이프라인의 결과가 어디로 전달되고, 어떻게 소비될지를 정의한다.
+
+Sink 역시 Source와 마찬가지로 다양한 대상 시스템을 지원한다. Kafka, HDFS, Amazon S3, Apache Cassandra, JDBC 기반 데이터베이스 등이 대표적인 예다. 예를 들어 Kafka Sink를 사용하면 Spark Structured Streaming에서 처리된 데이터를 다시 Kafka Topic으로 전송할 수 있다.
+
+```python
+word_count_query = counts_df.writeStream \
+.format("console") \
+.outputMode("complete") \
+.option("checkpointLocation", "chk-point-dir") \
+.start()
+```
+
+**(추가) Output Mode**
+Sink로 데이터를 출력할 때는 **Output Mode를 통해 현재 마이크로 배치의 결과가 어떻게 반영될지를 결정**한다.
+
+- `Append` 모드: 새로운 데이터만 추가하는 방식으로, 변경되지 않는 결과에 적합하다.
+- `Update` 모드: 기존 결과를 갱신하는 방식으로, UPSERT와 유사한 동작을 한다.
+- `Complete` 모드: 전체 결과를 매번 다시 쓰는 방식으로, 일종의 FULL REFRESH에 해당한다.
+
+Output Mode 선택은 처리 로직과 Sink의 특성에 따라 신중하게 결정해야 한다.
