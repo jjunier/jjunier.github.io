@@ -198,7 +198,7 @@ Spark에서 Off-Heap 메모리를 사용하려면 다음 설정이 필요하다.
 Spark 3.x부터는 Off-Heap 메모리 활용이 더욱 적극적으로 최적화되었다.
 대표적인 예가 **Project Tungsten을 기반으로 한 메모리 관리 방식**이다.
 
-Spark 3.x는 JVM에 의존하지 않고 직접 메모리를 관리할 수 있으며, 이 Off-Heap 메모리를 주로 DataFrame 연산에 사용한다. 이를 통해 GC 발생 빈도를 줄이고, 대규모 데이터 처리 시 성능을 보다 안정적으로 유지할 수 있다.
+Spark 3.x는 JVM에 의존하지 않고 직접 메모리를 관리할 수 있으며, 이 Off-Heap 메모리를 주로 **DataFrame 연산에 사용**한다. 이를 통해 GC 발생 빈도를 줄이고, 대규모 데이터 처리 시 성능을 보다 안정적으로 유지할 수 있다.
 
 Spark 3.x 기준으로 Executor가 사용하는 Off-Heap 관련 메모리는 다음과 같이 정리할 수 있다.
 
@@ -211,8 +211,8 @@ Spark 3.x 기준으로 Executor가 사용하는 Off-Heap 관련 메모리는 다
 ---
 Spark에서 발생하는 메모리 문제는 크게 두 가지로 나뉜다.
 
-- Driver OOM
-- Executor OOM
+- **Driver OOM**
+- **Executor OOM**
 
 두 경우는 원인과 대응 방식이 전혀 다르기 때문에, 구분해서 이해하는 것이 중요하다.
 
@@ -221,8 +221,8 @@ Driver는 모든 메타데이터와 실행 계획을 관리하기 때문에, 특
 
 대표적인 Driver OOM 케이스는 다음과 같다.
 
-- 대규모 데이터셋에 대해 collect() 호출
-- 큰 데이터셋을 대상으로 한 Broadcast Join
+- 대규모 데이터셋에 대해 `collect()` 호출
+- 큰 데이터셋을 대상으로 한 **Broadcast Join**
 - Python, R 등 JVM 외 언어로 작성된 코드
 - 지나치게 많은 Task 생성
 
@@ -245,13 +245,166 @@ Executor OOM은 주로 데이터 분포와 병렬성 설정 문제에서 발생�
 
 
 ### JVM과 Python 간의 통신
+---
+**Pyspark Driver의 구조**
+PySpark 애플리케이션의 Driver는 단일 프로세스가 아닌 두 개의 프로세스로 구성된다.
 
+- Python 프로세스
+- JVM 프로세스
 
+Spark 자체는 JVM 기반 애플리케이션이지만, PySpark는 Python 코드를 실행해야 하므로 **JVM과 Python 프로세스가 병렬적으로 동작**한다. 이 구조로 인해 PySpark는 순수 Spark(Scala/Java)와는 다른 메모리 특성을 가진다.
 
+![Pyspark Driver](/assets/img/contents/pyspark_driver.png "Pyspark Driver")
 
+**Pyspark 메모리 구조**
+Spark는 JVM 위에서 동작하지만, **PySpark의 Python 코드는 JVM 내부에서 직접 실행되지 않는다.** 따라서 Python 코드는 JVM Heap 메모리를 직접 사용할 수 없으며, 별도의 메모리 영역을 사용하게 된다.
 
+이를 위해 Spark는 PySpark 전용 메모리 설정을 제공한다.
 
+- `spark.executor.pyspark.memory`
+    → Python 프로세스가 사용하는 메모리
 
+- `spark.python.worker.memory`
+    → JVM과 Python 간 통신을 담당하는 Py4J가 사용하는 메모리
+
+이 두 설정은 PySpark 성능과 안정성에 직접적인 영향을 미친다.
+
+![Pyspark Memory](/assets/img/contents/pyspark_memory.png "Pyspark Memory")
+
+PySpark는 기본적으로 Executor의 overhead memory를 사용한다.
+
+`spark.executor.pyspark.memor`y가 설정되면, Python 프로세스가 사용할 수 있는 메모리 크기는 해당 값으로 고정된다. 다만 이 설정은 주로 외부 Python 라이브러리나 **사용자 정의 Python 함수를 사용하는 경우에 필요**하며, 기본적으로는 명시적으로 설정되지 않는다.
+
+- 기본값: 512MB (512m)
+- JVM과 Python 프로세스 간 통신을 담당하는 Py4J가 사용할 수 있는 최대 메모리
+- 해당 크기를 초과하면 **Disk Spill 발생**
+
+`spark.executor.pyspark.memory`
+    → Python 프로세스 자체가 사용할 수 있는 메모리 크기
+
+`spark.python.worker.memory`
+    → JVM 내부에서 관리되는 Python 오브젝트의 최대 메모리 크기
+
+**Spark와 Python 간의 통신 방식**
+Spark와 Python은 Py4J라는 프레임워크를 통해 데이터를 주고받는다.
+Py4J는 Python과 JVM 간의 데이터 교환을 담당하며, PySpark의 핵심 구성 요소 중 하나이다.
+
+DataFrame이나 RDD 연산 중 Python 코드가 사용되면, 해당 로직은 별도의 Python 프로세스에서 실행된다. 이 과정에서 **Partition 단위의 데이터가 Python 프로세스로 전달**되며, 이 데이터 이동 비용이 PySpark 성능에 영향을 줄 수 있다.
+
+**Spark와 UDF(User Defined Function)**
+Spark에서 UDF는 작성 언어와 방식에 따라 성능 특성이 크게 달라진다:
+
+- Java / Scala UDF
+    → JVM 내부에서 실행되어 성능상 가장 유리
+- Python UDF
+    → Py4J를 통한 데이터 직렬화/역직렬화 비용 발생
+- Pandas UDF (Vectorized UDF)
+    → PyArrow 기반, 컬럼 단위 처리로 성능 개선
+
+특히 Pandas UDF는 Vectorized 방식으로 동작하며, PyArrow를 활용해 JVM ↔ Python 간 데이터 전송 비용을 줄인다. PySpark 환경에서 Python UDF를 사용해야 한다면, 가능하다면 **Pandas UDF를 우선 고려하는 것이 바람직**하다.
+
+### Caching
+---
+Caching은 **자주 사용되는 DataFrame을 메모리에 유지하여 반복 연산 시 처리 속도를 향상시키는 기법**이다. 동일한 DataFrame을 여러 번 사용하는 경우, 매번 계산을 다시 수행하는 대신 캐시된 데이터를 재사용함으로써 성능을 크게 개선할 수 있다.
+
+다만, 캐싱했다고 해서 항상 성능이 좋아지는 것은 아니다. 실제로 해당 DataFrame이 메모리에 유지되고 있는지 확인해야 하며, 경우에 따라서는 다시 계산하는 것이 더 빠른 상황도 존재한다. 또한 캐싱은 메모리 사용량을 증가시키므로, 모든 DataFrame을 무분별하게 캐싱하는 것은 바람직하지 않다.
+
+**DataFrame을 캐싱하는 방법 (1)**
+Spark에서 DataFrame을 캐싱하는 방법은 크게 두 가지가 있다.
+
+- cache()
+- persist()
+
+두 방법 모두 DataFrame을 메모리, 디스크, 또는 Off-Heap 영역에 보관할 수 있으며, Lazy Execution 방식으로 동작한다. 즉, 실제 액션이 실행되기 전까지는 캐싱이 수행되지 않는다.
+
+또한 캐싱은 항상 Partition 단위로 이루어지며, 하나의 파티션이 부분적으로만 캐싱되는 일은 없다.
+
+**DataFrame을 캐싱하는 방법 (2)**
+persist()는 인자를 통해 캐싱 방식을 보다 세밀하게 제어할 수 있다.
+
+- `useMemory` : 메모리 사용 여부
+- `useDisk` : 디스크 사용 여부
+- `useOffHeap` : Off-Heap 사용 여부 (사전 설정 필요)
+- `deserialized`
+    - True : CPU 연산 감소, 메모리 사용 증가
+    - False : 메모리 절약, CPU 연산 증가
+    - 메모리 캐싱에서만 사용 가능
+- `replication`
+    - 서로 다른 Executor에 저장할 복제본 개수
+
+이 설정을 통해 메모리와 CPU 자원 간의 트레이드오프를 조절할 수 있다.
+
+**DataFrame을 캐싱하는 방법 (3)**
+persist()에서 자주 사용되는 설정 조합은 상수 형태로 제공된다.
+
+- `DISK_ONLY`
+- `MEMORY_ONLY`
+- `MEMORY_AND_DISK`
+- `MEMORY_ONLY_SER`
+- `MEMORY_AND_DISK_SER`
+- `OFF_HEAP`
+- `MEMORY_ONLY_2`
+- `MEMORY_ONLY_3`
+
+상수를 사용하면 캐싱 전략을 간단하면서도 명확하게 표현할 수 있다.
+
+**DataFrame을 캐싱하는 방법 (4)**
+기본적으로 persist()는 캐싱된 DataFrame을 메모리와 디스크에 저장하며, 필요 시 복제도 수행한다.
+
+`cache()`는 persist()의 단순화된 버전으로, 내부적으로 다음과 같은 설정을 사용한다.
+
+- useDisk = false
+- useMemory = true
+- useOffHeap = false
+- deserialized = true
+- replication = 1
+
+즉, cache()는 메모리 기반 캐싱을 간단히 적용하고 싶을 때 적합하다.
+
+**Spark SQL을 이용한 Caching**
+DataFrame API 외에도 Spark SQL을 통해 테이블 단위 캐싱이 가능하다.
+
+- `CACHE TABLE table_name`
+- `CACHE LAZY TABLE table_name`
+- `UNCACHE TABLE table_name`
+
+```python
+spark.sql("cache table table_name")
+spark.sql("cache lazy table table_name")
+spark.sql("uncache table table_name")
+```
+
+이를 통해 SQL 기반 워크플로우에서도 캐싱 전략을 일관되게 적용할 수 있다.
+
+**Caching을 해제하는 방법**
+캐싱된 데이터는 필요 없어졌을 때 반드시 해제하는 것이 중요하다.
+
+- DataFrame.unpersist()
+    → LRU(Least Recently Used) 정책 기반
+- UNCACHE TABLE table_name
+- spark.catalog.isCached("table_name")
+- spark.catalog.clearCache()
+
+```python
+DataFrame.unpersist (LRU - Least Recently Used)
+spark.sql("uncache table table_name")
+spark.catalog.isCached("table_name")
+spark.catalog.clearCache()
+```
+
+적절한 캐시 해제는 전체 애플리케이션의 메모리 안정성을 높인다.
+
+**Caching 관련 Best Practices**
+캐싱을 효과적으로 사용하기 위해서는 몇 가지 원칙을 지키는 것이 좋다.
+
+- 캐싱된 DataFrame이 명확하게 재사용되도록 변수로 분리
+- 컬럼 수가 많다면 필요한 컬럼만 선택해서 캐싱
+- 더 이상 사용하지 않는 경우 즉시 uncache
+- Parquet 등 컬럼 기반 포맷의 대규모 데이터셋은
+    → 매번 다시 읽는 것이 캐싱보다 빠를 수 있음
+- 캐싱 대상은 소수의 핵심 DataFrame으로 제한
+- 대형 DataFrame 캐싱은 지양
+- 캐싱을 만능 해결책으로 신뢰하지 말 것
 
 ## Spark Shuffling 최적화
 ---
