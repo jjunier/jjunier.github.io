@@ -155,6 +155,100 @@ Spark에서 병렬성을 높이기 위해서는 Thread 활용과 함께 적절�
 
 이를 위해 `spark.scheduler.mode`를 FIFO 대신 FAIR로 설정할 수 있으며, FAIR 모드에서는 `spark.scheduler.allocation.file`을 통해 Pool 설정 파일을 정의해야 한다.
 
+### Spark Application에서 Driver의 역할
+---
+Spark 애플리케이션은 기본적으로 **1개의 `Driver`와 1개 이상의 `Executor`**로 구성된다. 이 중 Driver는 애플리케이션의 시작부터 종료까지 전체 실행을 총괄하는 핵심 컴포넌트이다.
+
+Driver는 `main`함수를 실행하여 `SparkSession`과 `SparkContext`를 생성하고, 사용자가 작성한 코드를 분석하여 **Task 단위로 분해한 뒤 DAG(Directed Acyclic Graph) 를 생성**한다. 이후 DAG는 Logical Plan, Physical Plan, Execution Plan으로 변환되며, 이 과정에서 리소스 매니저와 협력하여 Executor에 Task를 분배하고 실행 상태를 관리한다.
+
+또한 Job, Stage, Task의 실행 정보는 **Spark Web UI(기본 4040 포트)를 통해 확인**할 수 있다.
+
+다만 Task 수가 과도하게 많아질 경우, 메타데이터를 관리하는 Driver의 메모리 사용량이 증가하면서 **Driver OOM이 발생할 수 있다는 점은 주의**해야 한다.
+
+**Executor 메모리 관리 방식의 변화**
+Spark 초기 버전에서는 Execution과 Storage 메모리를 **고정된 비율로 나누는 Static Memory Management 방식을 사용**했다. 이 방식은 구조는 단순하지만, 한쪽 메모리가 남아도 다른 쪽에서 사용할 수 없어 메모리 활용 효율이 낮았다.
+
+이를 개선하기 위해 Spark 1.6 이후부터는 **Unified Memory Manager가 도입**되었다.
+
+**Unified Memory Management의 동작 원리**
+Unified Memory Manager는 Execution 메모리와 Storage 메모리를 유동적으로 공유한다. 기본적으로 실행 중인 Task를 기준으로 메모리를 공정하게 할당하며, 필요 시 한 영역의 남는 메모리를 다른 영역에서 사용할 수 있다.
+
+Execution 메모리가 부족해지면 Storage Memory Pool의 여유 공간을 사용하고, 반대로 DataFrame이나 RDD 캐싱을 위한 Storage 메모리가 부족할 경우 Execution 메모리의 일부를 활용한다. 이때 `spark.memory.storageFraction`은 초기 경계 비율로 사용되며, 메모리가 모두 차기 시작하면 해당 경계를 기준으로 eviction이 발생한다.
+
+**메모리 부족 상황과 Spill**
+Executor 내에서 더 이상 사용할 수 있는 메모리가 없을 경우, Spark는 데이터를 메모리에서 디스크로 spill하여 처리한다. 이는 Job 실패를 방지할 수 있지만, 디스크 I/O로 인해 성능 저하를 유발한다.
+
+만약 디스크 spill조차 불가능한 상황이 되면, 결국 **OOM(Out Of Memory) 이 발생하며 Executor 또는 Job이 실패**하게 된다.
+
+### Off-Heap Memory
+---
+Spark는 기본적으로 JVM Heap(On-Heap) 메모리에서 가장 잘 동작하도록 설계되어 있다. 하지만 **JVM Heap은 Garbage Collection(GC)의 대상**이 되며, Heap 크기가 커질수록 GC로 인한 성능 비용 역시 증가한다는 한계를 가진다.
+
+이러한 문제를 완화하기 위해 Spark는 JVM 외부 메모리, 즉 Off-Heap 메모리를 함께 사용할 수 있도록 지원한다. Off-Heap 메모리는 GC의 영향을 받지 않기 때문에, 메모리 사용량이 큰 워크로드에서 성능 안정성을 높이는 데 유리하다.
+
+Spark에서 Off-Heap 메모리를 사용하려면 다음 설정이 필요하다.
+
+- `spark.memory.offHeap.enabled = true`
+- `spark.memory.offHeap.size`에 사용할 메모리 크기 지정
+
+이 외에도 Executor 프로세스가 사용하는 **Overhead 메모리 역시 JVM Heap 외부에서 관리**된다.
+
+### Spark 3.x의 Off-Heap Memory 구조
+---
+Spark 3.x부터는 Off-Heap 메모리 활용이 더욱 적극적으로 최적화되었다.
+대표적인 예가 **Project Tungsten을 기반으로 한 메모리 관리 방식**이다.
+
+Spark 3.x는 JVM에 의존하지 않고 직접 메모리를 관리할 수 있으며, 이 Off-Heap 메모리를 주로 DataFrame 연산에 사용한다. 이를 통해 GC 발생 빈도를 줄이고, 대규모 데이터 처리 시 성능을 보다 안정적으로 유지할 수 있다.
+
+Spark 3.x 기준으로 Executor가 사용하는 Off-Heap 관련 메모리는 다음과 같이 정리할 수 있다.
+
+- `spark.executor.memoryOverhead`
+- `spark.memory.offHeap.size`
+
+즉, Executor Heap 메모리를 늘리지 않고도 `spark.memory.offHeap.size` 설정을 통해 Off-Heap 메모리만 독립적으로 확장할 수 있다.
+
+### Spark에서 발생하는 메모리 이슈
+---
+Spark에서 발생하는 메모리 문제는 크게 두 가지로 나뉜다.
+
+- Driver OOM
+- Executor OOM
+
+두 경우는 원인과 대응 방식이 전혀 다르기 때문에, 구분해서 이해하는 것이 중요하다.
+
+**Driver OOM이 발생하는 대표적인 경우**
+Driver는 모든 메타데이터와 실행 계획을 관리하기 때문에, 특정 패턴에서 메모리 사용량이 급증할 수 있다.
+
+대표적인 Driver OOM 케이스는 다음과 같다.
+
+- 대규모 데이터셋에 대해 collect() 호출
+- 큰 데이터셋을 대상으로 한 Broadcast Join
+- Python, R 등 JVM 외 언어로 작성된 코드
+- 지나치게 많은 Task 생성
+
+특히 `collect()`나 Broadcast Join은 데이터를 Driver로 직접 가져오는 구조이기 때문에, 데이터 크기에 대한 고려 없이 사용하면 매우 위험하다.
+
+**Executor OOM이 발생하는 대표적인 경우**
+
+Executor OOM은 주로 데이터 분포와 병렬성 설정 문제에서 발생한다.
+
+대표적인 원인은 다음과 같다.
+
+- `spark.executor.cores` 값이 지나치게 큰 경우
+    → 하나의 Executor에서 동시에 너무 많은 Task 실행 (High Concurrency)
+
+- Data Skew로 인해 특정 Partition이 과도하게 커진 경우
+    → 일부 Task에서 메모리 집중 사용 발생
+
+이러한 상황에서는 Executor 메모리 증설보다는,
+**Partition 전략, Join 방식, Executor 자원 설정을 함께 점검하는 것이 효과적**이다.
+
+
+### JVM과 Python 간의 통신
+
+
+
+
 
 
 
