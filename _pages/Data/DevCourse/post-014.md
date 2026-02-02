@@ -406,10 +406,39 @@ spark.catalog.clearCache()
 - 대형 DataFrame 캐싱은 지양
 - 캐싱을 만능 해결책으로 신뢰하지 말 것
 
+### Filter (Predicate) Pushdown
+---
+Spark에서 대용량 데이터를 처리할 때 성능을 좌우하는 가장 중요한 요소 중 하나는 얼마나 적은 데이터를 읽느냐이다. 이를 위해 Spark는 여러 최적화 기법을 제공하는데, 그중 대표적인 것이 **Filter(Predicate) Pushdown과 Partition Pruning**를 사용한다.
+
+Filter Pushdown은 데이터를 모두 읽은 뒤 필터링하는 방식이 아니라, 데이터 소스에서 읽는 시점에 필터 조건을 적용하여 불필요한 데이터를 아예 로드하지 않는 최적화 기법이다.
+
+이 방식은 모든 데이터 소스에서 지원되지는 않으며, 대표적으로 Parquet 포맷에서 컬럼 통계 정보(min/max 등)가 존재하는 경우에만 효과적으로 동작한다. Filter Pushdown이 적용되면 I/O 자체가 줄어들기 때문에 성능 개선 효과가 크다.
+
+### Partition Pruning이란?
+---
+Partition Pruning은 Spark Optimizer가 필요한 파티션만 선택적으로 읽도록 하는 최적화 기법이다. Optimizer는 쿼리를 분석해 실제로 필요한 데이터가 들어 있는 파티션과 그렇지 않은 파티션을 구분하고, 불필요한 파티션은 스캔 대상에서 제외한다.
+
+이 최적화는 Spark의 Logical Plan Optimization 단계에서 수행된다.
+
+![Partition Pruning](/assets/img/contents/partition_pruning.png "Partition Pruning")
+
+### Static Partition Pruning
+---
+Static Partition Pruning은 쿼리 실행 전에 어떤 파티션을 읽을지 명확하게 알 수 있는 경우에 적용된다. 주로 테이블이 특정 컬럼을 기준으로 파티셔닝되어 있고, 쿼리의 필터 조건에 해당 파티션 컬럼이 직접 사용되는 경우이다.
+
+하지만 현실적인 데이터 모델에서는 파티셔닝이 보통 Fact 테이블에 적용되어 있고, 필터 조건은 Dimension 테이블에 걸리는 경우가 많아 Static 방식만으로는 한계가 있다.
+
+### Dynamic Partition Pruning
+---
+Dynamic Partition Pruning은 이러한 한계를 보완하기 위한 기법이다. 파티션되지 않은 테이블(Dimension)에 적용된 필터 조건을 실행 시점에 **파티션 테이블(Fact)에 동적으로 전달**하여 필요한 파티션만 읽도록 한다.
+
+특히 Dimension 테이블이 작아 Broadcast Join까지 활용된다면 성능 개선 효과는 더욱 커진다.
+
+Dynamic Partition Pruning은 기본적으로 활성화되어 있으며, 다음 설정으로 확인할 수 있다.
+
+
 ## Spark Shuffling 최적화
 ---
-
-
 
 
 ## Spark Partition 학습
