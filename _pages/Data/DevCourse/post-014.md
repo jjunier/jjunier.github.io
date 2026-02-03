@@ -439,6 +439,182 @@ Dynamic Partition Pruning은 기본적으로 활성화되어 있으며, 다음 �
 
 ## Spark Shuffling 최적화
 ---
+### Repartition을 사용하는 이유
+---
+`repartition`은 말 그대로 **데이터프레임의 파티션을 다시 나누는 작업**이다. 이 연산이 필요한 대표적인 이유는 다음과 같다.
+
+첫째, **병렬성을 높이기 위해서다.** 파티션 수가 너무 적으면 각 태스크가 처리해야 할 데이터 양이 커지고, 클러스터의 리소스를 충분히 활용하지 못한다. 이럴 때 파티션 수를 늘려주면 병렬 처리가 가능해진다.
+
+둘째, **지나치게 큰 파티션이나 Skew(쏠림) 파티션을 조정하기 위해서다.** 특정 키에 데이터가 몰려 있는 경우 일부 태스크만 오래 걸리게 되는데, repartition을 통해 이를 완화할 수 있다.
+
+셋째, **분석 패턴에 맞게 데이터를 재분배하기 위해서다.** 예를 들어 어떤 DataFrame을 특정 컬럼 기준으로 자주 그룹핑하거나 필터링한다면, 그 컬럼 기준으로 미리 파티션을 나눠 저장해두는 것이 효율적이다. 이를 “Write once, read many” 패턴이라고 부르며, 이와 유사한 개념이 바로 **Bucketing**이다.
+
+### Repartition 방식의 특징과 주의점
+---
+Spark에서는 repartition 방식으로 크게 두 가지를 제공한다.
+
+- `repartition`
+- `repartitionByRange`
+
+이 둘의 공통점은 항상 Shuffling이 발생한다는 것이다. 즉, 네트워크 I/O와 디스크 사용이 뒤따르며, 비용이 상당하다. 따라서 repartition은 “그럴듯해 보이니까” 쓰는 연산이 아니라, 명확한 이유가 있을 때만 사용해야 한다.
+
+실무에서는 종종 repartition이 아무 근거 없이 사용되어 오히려 전체 처리 시간이 늘어나고 비용만 증가하는 경우를 본다. 불필요한 `count()`, `distinct()`, 중복 제거 연산이 성능을 악화시키는 것과 비슷한 맥락이다.
+
+또 하나 주의할 점은, **컬럼을 기준으로 repartition한다고 해서 항상 균등한 파티션 크기가 보장되지는 않는다**는 것이다. 데이터 분포 자체가 불균형하다면, 결과 파티션 역시 Skew를 가질 수 있다.
+
+마지막으로, repartition은 파티션 수를 줄이는 용도로는 적합하지 않다. 줄이고 싶다면 반드시 `coalesce`를 사용해야 한다.
+
+repartition(numPartitions, *cols)
+
+`repartition`은 Hash 기반 파티셔닝을 사용한다. 사용 예시는 다음과 같다.
+
+- `repartition(5)`
+- `repartition(5, "city")`
+- `repartition(5, "city", "zipcode")`
+- `repartition("city")`
+- `repartition("city", "zipcode")`
+
+컬럼을 지정하지 않으면 전체 데이터를 랜덤하게 섞어 파티션을 나누고, 컬럼을 지정하면 해당 컬럼의 해시 값을 기준으로 파티션이 결정된다. 다만 앞서 언급했듯, 해시 기반이라고 해서 파티션 크기가 항상 균등해지는 것은 아니다.
+
+### repartitionByRange(numPartitions, *cols)
+---
+`repartitionByRange`는 **지정한 컬럼 값의 범위(range)**를 기준으로 파티션을 나눈다. 내부적으로는 데이터 샘플링을 통해 경계를 정하기 때문에, **실행할 때마다 결과가 달라질 수 있는 비결정적(Nondeterministic) 연산**이다.
+
+사용법은 repartition과 거의 동일하지만, 값의 범위가 의미 있는 컬럼(예: 날짜, 숫자 ID 등)에 특히 적합하다. 다만 이 역시 Shuffling이 발생하므로, 사용 전 반드시 비용 대비 효과를 고민해야 한다.
+
+### Coalesce가 필요한 경우
+---
+`coalesce`는 repartition과 목적이 다르다. 이 연산은 파티션 수를 줄이는 데에만 사용한다.
+
+가장 큰 특징은 Shuffling을 발생시키지 않는다는 점이다. 기존의 로컬 파티션들을 그대로 병합하기 때문에 비용은 적지만, 그만큼 Skew 파티션이 생길 가능성도 높다.
+
+또한 `coalesce` 역시 컬럼 기반으로 사용할 수는 있지만, 이 경우에도 균등한 파티션 크기는 보장되지 않는다. 따라서 대규모 후처리 단계에서 “결과 파일 수를 줄이고 싶을 때”처럼 명확한 목적이 있을 때 사용하는 것이 바람직하다.
+
+### DataFrame 힌트에 대한 간단한 정리
+---
+마지막으로, Spark에서는 **DataFrame 힌트(hint)**를 통해 Spark SQL Optimizer에게 실행 계획에 대한 “제안”을 할 수 있다. 이는 기본 최적화 전략을 완전히 바꾸기보다는, 특정 상황에서 더 적합한 실행 계획을 유도하기 위한 장치다.
+
+힌트는 크게 두 가지로 나뉜다.
+
+- Partitioning 관련 힌트
+- Join 관련 힌트
+
+복잡한 조인이나 대규모 데이터 처리에서, 힌트를 적절히 활용하면 Spark가 더 효율적인 Execution Plan을 선택하도록 도울 수 있다.
+
+### DataFrame Partitioning 관련 힌트들
+---
+Spark는 파티션 전략과 관련된 여러 힌트를 제공한다. 이 힌트들은 Execution Plan을 생성하는 과정에서 파티션을 어떻게 다룰지에 대한 방향성을 Optimizer에게 전달한다.
+
+대표적인 파티셔닝 관련 힌트는 다음과 같다.
+
+- `COALESCE`
+- `REPARTITION`
+- `REPARTITION_BY_RANGE`
+- `REBALANCE`
+
+이 힌트들은 특히 **DataFrame을 테이블이나 파일 형태로 저장할 때 매우 유용**하다. 저장 단계에서 파티션 전략을 잘 잡아두면, 이후 반복적인 조회(Read)가 훨씬 효율적으로 이루어진다.
+
+그중 REBALANCE는 파일 크기를 최대한 비슷하게 맞춰 저장하는 데 목적이 있다. 다만 이 기능은 **AQE(Adaptive Query Execution)**가 활성화되어 있어야 효과적으로 동작한다. AQE를 통해 실행 시점에 파티션을 재조정하면서, 결과 파일들이 특정 파티션에 몰리지 않도록 균형을 맞춘다.
+
+예를 들어, 조인 이후 결과 파티션 수를 줄이고 싶다면 다음과 같이 힌트를 줄 수 있다.
+
+```scala
+df1.join(df2, "id", "inner")
+  .hint("COALESCE", 3)
+```
+이 코드는 조인 결과를 3개의 파티션으로 병합하라는 힌트를 Optimizer에게 전달한다. 중요한 점은, 이는 **강제(force)가 아니라 제안(hint)**이라는 점이다. Spark는 전체 실행 계획과 비용을 고려해 힌트를 무시할 수도 있다.
+
+### DataFrame Join 관련 힌트들
+---
+힌트가 가장 많이 사용되는 영역은 단연 **Join**이다. Spark는 데이터 크기와 통계 정보를 기반으로 자동으로 조인 전략을 선택하지만, 사용자가 데이터 특성을 더 잘 알고 있는 경우 힌트를 통해 이를 유도할 수 있다.
+
+**Broadcast 계열 힌트**
+
+- `BROADCAST`
+- `BROADCASTJOIN`
+- `MAPJOIN`
+
+이 힌트들은 Broadcast Join 사용을 제안한다. 한쪽 테이블이 충분히 작을 경우, 이를 모든 Executor에 복제해 네트워크 Shuffle을 피하는 전략이다. 소규모 Dimension 테이블과의 조인에서 매우 효과적이다.
+
+**Merge 계열 힌트**
+
+- `MERGE`
+- `SHUFFLE_MERGE`
+- `MERGEJOIN`
+
+이 힌트들은 Shuffle Merge Join 사용을 제안한다. 이는 Spark의 기본 조인 전략이기도 하며, 양쪽 데이터가 모두 크고 조인 키 기준으로 정렬이 가능한 경우에 적합하다.
+
+**Shuffle Hash Join 힌트**
+
+- `SHUFFLE_HASH`
+
+Shuffle Hash Join을 사용하도록 제안하는 힌트다. 다만 제약이 명확한데, Full Outer Join에서는 사용할 수 없다. 특정 상황에서는 Merge Join보다 빠를 수 있지만, 메모리 사용량이 늘어날 수 있어 주의가 필요하다.
+
+**Shuffle Replicate NL 힌트**
+
+- `SHUFFLE_REPLICATE_NL`
+
+이 힌트는 **Shuffle-and-replicate 방식의 Nested Loop Join, 즉 사실상 Cross Join을 유도**한다. 조인 조건이 없거나 매우 특수한 경우에만 사용해야 하며, 데이터 크기가 크면 비용이 폭발적으로 증가한다.
+
+한 가지 중요한 규칙은, 여러 개의 조인 힌트가 동시에 사용될 경우 우선순위가 존재한다는 점이다. 일반적으로 위에서 아래로 갈수록 우선순위가 낮아지며, Spark는 가장 우선순위가 높은 힌트를 먼저 고려한다.
+
+예를 들어 Spark SQL에서는 다음과 같이 조인 힌트를 명시할 수 있다.
+
+```sql
+SELECT /*+ MERGE(df2) */ *
+FROM df1
+JOIN df2
+  ON df1.order_month = df2.year_month
+```
+
+이 쿼리는 df2와의 조인에서 Merge Join을 우선적으로 고려하라는 의미다.
+
+### DataFrame 힌트 사용법 정리
+---
+힌트는 Spark SQL과 DataFrame API 양쪽에서 모두 사용할 수 있다.
+
+**Spark SQL에서의 힌트**
+
+Spark SQL에서는 주석 형태로 힌트를 작성한다.
+
+```sql
+/*+ hint [, … ] */
+```
+
+대표적인 예시는 다음과 같다.
+
+```sql
+SELECT /*+ REPARTITION(3) */ *
+FROM table
+```
+
+또는 조인 시 Broadcast Join을 유도하는 경우,
+
+```sql
+SELECT /*+ BROADCAST(table1) */ *
+FROM table1
+JOIN table2
+  ON table1.key = table2.key
+
+```
+
+**DataFrame API에서의 힌트**
+
+DataFrame API에서는 .hint() 메소드를 사용한다.
+
+```scala
+val joinDf =
+  df1.join(df2, "id", "inner")
+     .hint("COALESCE", 3)
+```
+
+또는 조인 대상 중 하나에만 Broadcast 힌트를 주고, 결과 파티션까지 함께 제어할 수도 있다.
+
+```scala
+val joinDf =
+  df1.join(df2.hint("broadcast"), "id", "inner")
+     .hint("COALESCE", 3)
+```
 
 
 ## Spark Partition 학습
