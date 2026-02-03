@@ -616,6 +616,123 @@ val joinDf =
      .hint("COALESCE", 3)
 ```
 
+### Spark Optimization의 역사
+---
+**Spark 1.x: Catalyst Optimizer와 Tungsten Project**
+Spark 1.x 시절의 최적화는 크게 두 축으로 이루어져 있었다.
+
+먼저 Catalyst Optimizer다. Catalyst는 규칙 기반(rule-based) 최적화 엔진로, SQL이나 DataFrame 연산을 논리적으로 변환하는 역할을 했다. 대표적인 최적화로는 조건절을 최대한 아래로 밀어내는 Predicate Pushdown, 필요한 컬럼만 읽도록 하는 Projection Pushdown 등이 있다. 이 단계에서는 “어떤 순서로 연산을 수행할 것인가”에 초점이 맞춰져 있었다.
+
+두 번째는 Tungsten Project다. 이는 성능의 발목을 잡던 JVM 특유의 한계, 특히 GC 비용을 줄이기 위한 시도였다. Spark는 Tungsten을 통해 Off-Heap 메모리 관리를 직접 수행하고, 코드 생성(Code Generation)을 통해 CPU 친화적인 실행을 지향했다. 즉, “어떻게 빠르게 실행할 것인가”에 대한 해답이었다.
+
+**Spark 2.x: CBO (Cost-Based Optimizer)**
+Spark 2.x에 들어서면서 한 단계 더 진화한 개념이 등장한다. 바로 **CBO(Cost-Based Optimizer)**다.
+
+CBO는 DataFrame 및 테이블의 통계 정보를 기반으로, 여러 실행 계획 중 가장 비용이 낮을 것으로 예상되는 plan을 선택한다. 여기에는 다음과 같은 정보들이 활용된다.
+
+- 전체 데이터 크기
+- 레코드 수
+- 컬럼별 최소값 / 최대값
+- 히스토그램 등 분포 정보
+
+즉, Spark는 더 이상 “항상 같은 규칙”이 아니라, 데이터의 특성에 따라 다른 실행 계획을 선택할 수 있게 되었다. 다만 이 방식에는 한계가 있었는데, 통계 정보는 대부분 **실행 전(parsing time)**에 수집된다는 점이다.
+
+### AQE 이전의 세계
+---
+다음과 같은 단순한 GROUP BY 쿼리를 생각해보자.
+
+```sql
+SELECT sku, SUM(price) AS sales
+FROM order
+GROUP BY sku;
+```
+
+AQE가 없던 시절, Spark는 이 쿼리를 실행하면서 고정된 실행 계획을 만든다.
+
+이 쿼리는 보통 두 개의 Stage를 생성한다:
+
+1. 데이터를 읽고 Shuffle을 수행하는 Stage
+2. Shuffle 결과를 받아 최종 Aggregation을 수행하는 Stage
+
+이때 Shuffle 이후 생성되는 파티션 수는 spark.sql.shuffle.partitions 설정 값에 의해 고정된다. 문제는, 이 시점에서는 실제 데이터 크기나 분포를 정확히 알기 어렵다는 점이다.
+
+**spark.sql.shuffle.partitions의 한계**
+spark.sql.shuffle.partitions는 Spark 성능 튜닝에서 가장 자주 언급되는 설정 중 하나다. MapReduce 시절의 mapreduce.job.reduces와 거의 동일한 역할을 한다.
+
+하지만 이 값 하나로 모든 상황을 커버하기는 매우 어렵다.
+
+- 파티션 수가 너무 적으면,
+    → 병렬성이 낮아지고, OOM이나 디스크 스필 가능성이 커진다.
+
+- 파티션 수가 너무 많으면,
+    → Task 생성과 스케줄링 오버헤드가 증가하고, 잦은 네트워크 I/O로 병목이 발생한다.
+
+결국 핵심 질문은 이것이다. “Spark가 알아서 상황에 맞게 파티션 수를 결정해줄 수는 없을까?”
+
+**이 문제를 해결하기 위한 접근**
+이 문제는 Spark만의 고민은 아니었다. 대용량 데이터베이스 분야에서는 이미 오래전부터 연구된 문제다.
+
+Spark 3.0 이전, Intel Big Data 팀이 이 문제에 대한 프로토타입을 개발했고, 이후 Databricks와 협업하면서 Spark에 본격적으로 도입된다.
+
+핵심 아이디어는 단순하다.
+- Parsing time(실행 전) 최적화만으로는 충분하지 않다.
+- Runtime(실행 중) 정보까지 활용해야 한다.
+
+특히 UDF가 많이 사용되는 경우, 실행 전에는 비용을 예측하기가 거의 불가능하기 때문에 이 문제는 더 심각해진다.
+
+### AQE란 무엇인가
+---
+AQE(Adaptive Query Execution)는 다음과 같이 정의된다.
+
+> “실행 중(Runtime)에 수집한 통계 정보를 기반으로, 쿼리 실행 도중에 동적으로 최적화를 수행하는 방식”
+
+즉, AQE는 모든 최적화 결정을 실제 실행 중에 관측한 정확한 통계 정보에 기반한다.
+
+그렇다면 중요한 질문이 하나 남는다.
+**언제 실행 중 통계를 수집하고, 언제 실행 계획을 바꾸는 것이 가장 좋을까?**
+
+Spark의 실행 단계를 떠올려보면 답이 보인다.
+
+```text
+Query → Job → Stage → Task
+```
+
+**왜 Stage가 최적의 변경 시점인가**
+
+Spark에서 Stage는 Shuffle이나 Broadcast를 기준으로 나뉜다. 그리고 Stage 경계에서는 다음과 같은 일이 발생한다.
+
+- 중간 결과가 materialize 된다.
+- 실제 파티션의 수와 크기를 정확히 알 수 있다.
+
+즉, 이 시점은 데이터 분포를 추측이 아니라 사실로 알 수 있는 최초의 지점이다.
+
+앞서 본 GROUP BY 쿼리를 다시 보면,
+
+- Stage 0: Scan → Shuffle → 중간 SUM
+- Stage 1: Shuffle 결과 → 최종 SUM
+
+바로 이 두 번째 Stage가 시작되는 시점이, 최적화 방식을 바꾸기에 가장 이상적인 타이밍이다.
+
+### AQE 이후의 세계
+---
+AQE가 활성화된 환경에서는, GROUP BY 쿼리의 두 번째 Stage 시작 시점에 **AQEShuffleRead**라는 새로운 메커니즘이 개입한다.
+
+이를 통해 Spark는 다음과 같은 결정을 실행 중에 다시 내릴 수 있다.
+
+**AQE가 특히 필요한 경우들**
+AQE는 단순한 파티션 조정 기능이 아니다. 다음과 같은 고급 최적화를 가능하게 만든다.
+
+- Shuffle 이후 파티션을 동적으로 병합(Coalescing)
+    → Spark 3에서 도입
+
+- 조인 전략을 실행 중에 전환
+    → Spark 3.2에서 강화
+
+- Skew Join을 동적으로 감지하고 최적화
+    → Spark 3에서 도입
+
+이제 Spark는 더 이상 “처음에 세운 계획을 끝까지 밀어붙이는 엔진”이 아니다.
+실행하면서 보고, 판단하고, 전략을 바꾸는 엔진으로 진화했다.
 
 ## Spark Partition 학습
 ---
