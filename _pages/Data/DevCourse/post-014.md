@@ -736,9 +736,68 @@ AQE는 단순한 파티션 조정 기능이 아니다. 다음과 같은 고급 �
 
 ## Spark Partition 학습
 ---
+### Dynamically Optimizing Skew Joins란 무엇인가?
+---
+Spark 환경에서 대규모 데이터를 처리하다 보면 데이터 스큐(skew) 문제는 성능 저하의 가장 흔한 원인 중 하나이다.
+Dynamically Optimizing Skew Joins는 이러한 스큐 문제를 **Spark AQE(Adaptive Query Execution)**가 런타임에 감지하고, 자동으로 최적화해주는 기능이다.
 
+### 왜 Skew Join 최적화가 필요한가?
+---
+Skew Partition이 만드는 병목 현상
 
+조인 연산 시 특정 파티션에 데이터가 과도하게 몰리면 다음과 같은 문제가 발생한다.
 
+- 대부분의 태스크는 빠르게 끝나지만, 소수의 태스크만 유독 오래 실행한다
+- 이 몇 개의 태스크 때문에 전체 Job / Stage 종료가 지연된다.
+- 스큐 파티션이 메모리를 초과하면 Disk Spill 발생한다.
+    - 디스크 I/O로 인해 성능이 급격히 저하된다.
+
+즉, 클러스터 자원은 충분한데도 불구하고 불균형한 데이터 분포 하나 때문에 전체 성능이 무너지는 상황이 발생한다.
+
+### AQE가 제시하는 해법
+---
+Spark의 AQE는 이러한 문제를 사전에 추측하지 않고, 실행 중에 관찰한 통계 정보를 기반으로 해결한다.
+
+AQE 기반 Skew Join 최적화는 다음과 같은 전략을 따릅니다.
+
+1. Skew Partition 존재 여부를 런타임에 탐지한다.
+2. Skew Partition을 더 작은 여러 파티션으로 분할된다.
+3. 조인 대상 반대편 파티션을 중복 생성한다.
+4. 분할된 파티션 단위로 조인을 병렬 수행한다.
+
+이 방식은 태스크 실행 시간을 고르게 분산시켜, 특정 태스크가 병목이 되는 상황을 제거한다.
+
+### Dynamically Optimizing Skew Joins 동작 방식
+---
+1. Leaf Stage 실행
+먼저 각 테이블의 Leaf Stage가 실행된다. 이 단계에서 Spark는 각 파티션의 실제 데이터 크기를 수집한다.
+
+2. Skew Partition 감지 및 분할
+AQE는 파티션 크기를 비교하여 비정상적으로 큰 파티션(skew partition) 을 감지한다.
+
+감지된 skew partition은 Skew Reader를 통해 여러 개의 작은 파티션으로 재구성된다.
+
+2. Skew Partition 감지 및 분할
+AQE는 파티션 크기를 비교해 비정상적으로 큰 파티션(skew partition) 을 감지한다.
+
+감지된 skew partition은 Skew Reader를 통해 여러 개의 작은 파티션으로 재구성됩니다.
+
+4. 병렬 조인 수행
+
+결과적으로 하나의 거대한 태스크가 아닌, 여러 개의 균등한 태스크로 구성된다.
+
+이에 전체 Stage 실행 시간이 단축되고, Disk Spill 가능성도 크게 감소한다.
+
+**주요 설정 파라미터**
+Skew Join 최적화는 기본 설정으로도 동작하지만, 워크로드 특성에 따라 조정이 필요할 수 있다.
+
+`spark.sql.adaptive.skewJoin.skewedPartitionFactor`
+스큐 여부를 판단하는 비율 기준으로, 평균 파티션 크기 대비 몇 배 이상 크면 skew로 판단할지 결정한다. 기본값은 5이다.
+
+`spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes`
+절대 크기의 기준으로, 해당 바이트 크기를 초과해야 skew partition으로 간주한다. 기본값은 256MB이다.
+
+이 두 조건을 모두 만족해야 **skew partition으로 인식**된다.
 
 ## Spark ML 소개와 ML 모델 빌딩
 ---
