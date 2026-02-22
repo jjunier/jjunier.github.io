@@ -11,9 +11,10 @@ bookmark: true
 
 ## 이번 주 학습 목표 
 --- 
-- 
-- 
--
+- **Broadcast Variable**로 **셔플(Shuffle)을 최소화**하고(Closure 대비 차이 이해 포함) 룩업/조인 **성능을 개선**한다.
+- **리소스·스케줄링·메모리 관리(Driver/Executor, Unified/Off-Heap, OOM)**를 이해하고 **핵심 튜닝 포인트**를 정리한다.
+- **캐싱, Pushdown, 파티션 재조정(repartition/coalesce), 힌트, AQE(스큐 조인 포함)**를 통해 **실행 계획 최적화**를 적용한다.
+
 
 ## Spark 기타 기능과 메모리 관리
 ---
@@ -115,7 +116,8 @@ Static Allocation은 기본 동작 방식으로, Spark Application이 리소스 
 
 Dynamic Allocation은 실행 상황에 따라 Executor를 요청하거나 반환하는 방식이다. 여러 Spark Application이 하나의 리소스 매니저를 공유하는 환경에서는 Dynamic Allocation을 활성화하는 것이 일반적으로 유리하다.
 
-리소스 설정은 spark-submit 명령어를 통해 `--num-executors`, `--executor-cores`, `--executor-memory`와 같은 옵션으로 제어할 수 있다.
+리소스 설정은 spark-submit 명령어를 통해 `--num-executors`, `--executor-cores`, 
+`--executor-memory`와 같은 옵션으로 제어할 수 있다.
 
 ### Spark의 리소스 할당 전략과 스케줄링
 ---
@@ -133,11 +135,21 @@ Static Allocation은 설정이 단순하고 예측 가능하지만, 작업 부�
 이에 비해 Dynamic Allocation은 실행 상황에 따라 Executor를 동적으로 요청하거나 반환하는 방식이다. 작업이 몰릴 때는 Executor를 늘리고, 유휴 상태가 지속되면 Executor를 릴리스함으로써 리소스 사용 효율을 높인다. 여러 Spark Application이 하나의 클러스터를 공유하는 환경에서는 Dynamic Allocation이 특히 효과적이다.
 
 **Dynamic Resource Allocation 제어 옵션**
-Dynamic Allocation은 여러 환경 변수를 통해 세밀하게 제어할 수 있다. `spark.dynamicAllocation.enabled`를 true로 설정하면 기능이 활성화되며, `spark.dynamicAllocation.shuffleTracking.enabled`를 통해 셔플 파일 추적 기반 동적 할당을 사용할 수 있다.
+Dynamic Allocation은 여러 환경 변수를 통해 세밀하게 제어할 수 있다. 
+`spark.dynamicAllocation.enabled`를 true로 설정하면 기능이 활성화되며, 
+`spark.dynamicAllocation.shuffleTracking.enabled`를 통해 
+셔플 파일 추적 기반 동적 할당을 사용할 수 있다.
 
-Executor가 유휴 상태일 때 얼마 후에 반환할지를 결정하는 옵션이 `spark.dynamicAllocation.executorIdleTimeout`이며, 반대로 새 Executor를 요청하는 시점을 제어하는 옵션이 `spark.dynamicAllocation.schedulerBacklogTimeout`이다.
+Executor가 유휴 상태일 때 얼마 후에 반환할지를 결정하는 옵션이 
+`spark.dynamicAllocation.executorIdleTimeout`이며, 
+반대로 새 Executor를 요청하는 시점을 제어하는 옵션이 
+`spark.dynamicAllocation.schedulerBacklogTimeout`이다.
 
-또한 최소·최대·초기 Executor 수를 각각 `spark.dynamicAllocation.minExecutors`, `spark.dynamicAllocation.maxExecutors`, `spark.dynamicAllocation.initialExecutors`로 지정할 수 있다. `spark.dynamicAllocation.executorAllocationRatio`는 Executor 증가 속도를 조절하는 역할을 한다.
+또한 최소·최대·초기 Executor 수를 각각 
+`spark.dynamicAllocation.minExecutors`, `spark.dynamicAllocation.maxExecutors`, 
+`spark.dynamicAllocation.initialExecutors`로 지정할 수 있다. 
+`spark.dynamicAllocation.executorAllocationRatio`는 
+Executor 증가 속도를 조절하는 역할을 한다.
 
 ### Spark Scheduler
 ---
@@ -798,15 +810,3 @@ Skew Join 최적화는 기본 설정으로도 동작하지만, 워크로드 특�
 절대 크기의 기준으로, 해당 바이트 크기를 초과해야 skew partition으로 간주한다. 기본값은 256MB이다.
 
 이 두 조건을 모두 만족해야 **skew partition으로 인식**된다.
-
-## Spark ML 소개와 ML 모델 빌딩
----
-
-
-
-
-## ML Pipeline과 Tuning 소개와 실습
----
-
-
-
