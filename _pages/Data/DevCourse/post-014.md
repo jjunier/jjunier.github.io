@@ -15,7 +15,6 @@ bookmark: true
 - **리소스·스케줄링·메모리 관리(Driver/Executor, Unified/Off-Heap, OOM)**를 이해하고 **핵심 튜닝 포인트**를 정리한다.
 - **캐싱, Pushdown, 파티션 재조정(repartition/coalesce), 힌트, AQE(스큐 조인 포함)**를 통해 **실행 계획 최적화**를 적용한다.
 
-
 ## Spark 기타 기능과 메모리 관리
 ---
 대규모 데이터 처리 환경에서 성능 병목의 가장 흔한 원인 중 하나는 **셔플(Shuffle)**이다. Spark에서는 이를 줄이기 위한 다양한 최적화 기법을 제공하며, 그중 대표적인 방식이 **Broadcast Variable**이다. Broadcast Variable은 특히 머신러닝 파이프라인이나 룩업 테이블 처리에서 매우 중요한 역할을 한다.
