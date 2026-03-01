@@ -7,3 +7,5 @@ _site/
 *.gem
 Gemfile.lock
 vendor
+
+_Example
