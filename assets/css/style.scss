@@ -1,14 +1,14 @@
 ---
 ---
 
-@use "vars" as *;
-@use "base";
-@use "layout";
-@use "root";
-@use "sidebar";
-@use "navigation";
-@use "pagination";
-@use "toc";
-@use "post";
-@use "search";
-@use "darkmode";
+@import "vars";
+@import "base";
+@import "layout";
+@import "root";
+@import "sidebar";
+@import "navigation";
+@import "pagination";
+@import "toc";
+@import "post";
+@import "search";
+@import "darkmode";
