@@ -1,6 +1,3 @@
-@use "sass:map";
-@use "vars" as *;
-
 @mixin mq($name) {
   // Retrieves the value from the key
   $value: map.get($mediawd, $name);
