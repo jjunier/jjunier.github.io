@@ -536,6 +536,7 @@ Apache Airflow 는 이 문제를 시스템적으로 해결한다. 핵심 개념�
 
 즉, 데이터 엔지니어는 날짜를 계산하지 않는다. Airflow가 지정해준 execution_date를 그대로 사용하면 된다.
 
+{% raw %}
 ```python
 sql = f"""
 SELECT *
@@ -543,6 +544,7 @@ FROM table
 WHERE DATE(ts) = '{{{{ ds }}}}'
 """
 ```
+{% endraw %}
 
 이렇게 작성하면, Backfill이 자동으로 쉬워진다.
 

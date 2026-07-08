@@ -1,6 +1,12 @@
----
----
-$baseurl: "{{ site.baseurl }}";
+@use "vars" as *;
+@use 'layout' as *;
+@use "sidebar";
+@use "navigation";
+@use "pagination";
+@use "toc";
+@use "post";
+@use "search";
+@use "darkmode";
 
 html, body {
   margin:0;
@@ -50,17 +56,6 @@ input::-webkit-search-results-decoration{
 	display:none;
 }
 
-@import 'vars';
-@import 'layout';
-
 :root{
   --pagewidth-desktop:calc(max(min(100vw - #{$sidebarwd} - 2rem, #{$contentwd}), 44rem));
 }
-
-@import "sidebar";
-@import "navigation";
-@import "pagination";
-@import "toc";
-@import "post";
-@import "search";
-@import "darkmode";
