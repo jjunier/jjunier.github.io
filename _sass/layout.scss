@@ -1,6 +1,6 @@
 @mixin mq($name) {
   // Retrieves the value from the key
-  $value: map.get($mediawd, $name);
+  $value: map-get($mediawd, $name);
 
   // If the key exists in the map
   @if $value {
@@ -9,7 +9,7 @@
       @content;
     }
   } @else {
-    @warn "No value could be retrieved from `#{$name}`. Please make sure it is defined in `$mediawd` map.";
+    @warn "No value could be retrieved from `#{$mediawd}`. Please make sure it is defined in `$mediawd` map.";
   }
 }
 
