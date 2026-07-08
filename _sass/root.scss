@@ -1,0 +1,5 @@
+@use "vars" as *;
+
+:root {
+  --pagewidth-desktop: calc(max(min(100vw - #{$sidebarwd} - 2rem, #{$contentwd}), 44rem));
+}

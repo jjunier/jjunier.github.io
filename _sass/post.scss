@@ -270,8 +270,8 @@ main {
         border-radius:4px;
 
         svg {
-          -webkit-mask-image:url($baseurl + '/assets/img/icon/clipboard-regular.svg');
-          mask-image:url($baseurl + '/assets/img/icon/clipboard-regular.svg');
+          -webkit-mask-image: url("#{$baseurl}/assets/img/icon/clipboard-regular.svg");
+          mask-image: url("#{$baseurl}/assets/img/icon/clipboard-regular.svg");
           background-color:#555 !important; 
           mask-repeat:no-repeat;
           mask-position:center;
